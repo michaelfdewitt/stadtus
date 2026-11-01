@@ -64,8 +64,12 @@ def main():
     ranks = a.path.split(",")
     params = {"country": a.country, "year": a.year, "taxonKey": a.taxon, "datasetKey": a.dataset,
               "hasCoordinate": "true", "occurrenceStatus": "PRESENT"}
+    # GBIF returns records in date order, so a single page run would cover only
+    # the first weeks of the year. Spread the budget evenly over the months.
     print(f"fetching up to {a.limit} records from GBIF…", file=sys.stderr)
-    records = fetch(params, a.limit)
+    records = []
+    for month in range(1, 13):
+        records += fetch(dict(params, month=month), a.limit // 12)
 
     items = []
     for r in records:
