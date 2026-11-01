@@ -27,7 +27,7 @@ export function buildUI(app, els) {
   // ----- top bar -----
   S.chips = h('div', { class: 'chips' });
   topbar.append(
-    h('div', { class: 'brand' }, 'Stadtus'),
+    h('div', { class: 'brand' }, 'Stadtus', h('span', { class: 'tag' }, 'alpha')),
     h('div', { class: 'dataset' }),
     S.chips,
     h('div', { class: 'top-actions' },

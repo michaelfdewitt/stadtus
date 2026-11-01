@@ -1,5 +1,7 @@
 # Stadtus
 
+**Alpha.** Works end to end; the data format and UI may still change between tags.
+
 A 3D city view of any hierarchical dataset, in the spirit of the file-system
 city in *Jurassic Park*. Every object is a building. The hierarchy decides
 where it stands; three metadata fields decide how tall it is, its color, and
