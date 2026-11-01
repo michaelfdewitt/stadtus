@@ -71,6 +71,8 @@ export function buildUI(app, els) {
         h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Open JSON…'),
         app.city ? h('a', { href: '#', class: 'quiet', onclick: e => { e.preventDefault(); app.snapshot(); } }, 'Save PNG') : null),
       app.samples.length ? h('div', { class: 'hint' }, 'Samples: ', sampleLinks()) : null,
+      app.city?.source ? h('div', { class: 'hint' }, 'Source: ', app.city.source.url ? h('a', { href: app.city.source.url, target: '_blank', rel: 'noopener' }, app.city.source.name || app.city.source.url) : app.city.source.name,
+        app.city.source.license ? ` · ${app.city.source.license}` : null, app.city.source.fetched ? ` · fetched ${app.city.source.fetched}` : null) : null,
       h('div', { class: 'hint' }, 'Drop a .json file anywhere. It is read in this tab only and never uploaded.'),
       S.status,
     );

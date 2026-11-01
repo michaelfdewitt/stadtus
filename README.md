@@ -35,7 +35,8 @@ Load data with **Open JSON…**, by dropping a `.json` file on the page, with
 }
 ```
 
-Only `items` is required. Each item has a `path` (array, or `"a/b/c"` string)
+Only `items` is required. An optional `source` (`name`, `url`, `license`,
+`fetched`) is shown for attribution. Each item has a `path` (array, or `"a/b/c"` string)
 and any flat metadata. Field types (`number`, `category`, `string`, `date`) are
 inferred; declare a field only to override the type, label, unit, scale
 (`linear`, `sqrt`, `log`) or category order. A plain JSON array of objects also
@@ -66,6 +67,7 @@ Small Python scripts that produce city JSON. Add your own with
 
 ```sh
 python3 adapters/filesystem.py ~/src/myproject -o data/myproject.json   # one building per file
+python3 adapters/gbif.py --country DK --year 2025 --limit 10000         # species observations from GBIF, by taxonomy
 python3 adapters/samples.py                                            # synthetic bugs + expenses
 ```
 

@@ -250,7 +250,8 @@ function rampColor(ramp, t) {
 //   "name": "Dataset name",
 //   "fields":   { "<key>": { "type": "number|category|string|date", "label": "...", "scale": "linear|log|sqrt" } },  // optional
 //   "defaults": { "height": "<key>", "color": "<key>", "spire": "<key>", "label": "<key>" },                             // optional
-//   "items": [ { "id": "...", "name": "...", "path": ["a","b"] | "a/b", ...metadata } ]
+//   "items": [ { "id": "...", "name": "...", "path": ["a","b"] | "a/b", ...metadata } ],
+//   "source":   { "name", "url", "license", "fetched" }                                                                     // optional attribution
 // }
 
 
@@ -281,7 +282,7 @@ function loadCity(doc) {
   const tree = buildTree(items);
   const defaults = pickDefaults(fields, doc.defaults || {});
   const actions = normalizeActions(doc.actions || [], fields);
-  return { name: doc.name || 'Untitled city', items, fields, tree, defaults, actions };
+  return { name: doc.name || 'Untitled city', items, fields, tree, defaults, actions, source: doc.source || null };
 }
 
 // ---------- fields ----------
@@ -295,6 +296,7 @@ function inferFields(items, declared) {
     const decl = declared[k] || {};
     const vals = [];
     for (const it of items) { const v = it[k]; if (v != null && v !== '') vals.push(v); }
+    if (!vals.length) continue; // a field with no values carries nothing
     let type = decl.type || detectType(vals, items.length);
     const f = { key: k, label: decl.label || k, type, description: decl.description };
     if (type === 'number' || type === 'date') {
@@ -1333,6 +1335,8 @@ function buildUI(app, els) {
         h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Open JSON…'),
         app.city ? h('a', { href: '#', class: 'quiet', onclick: e => { e.preventDefault(); app.snapshot(); } }, 'Save PNG') : null),
       app.samples.length ? h('div', { class: 'hint' }, 'Samples: ', sampleLinks()) : null,
+      app.city?.source ? h('div', { class: 'hint' }, 'Source: ', app.city.source.url ? h('a', { href: app.city.source.url, target: '_blank', rel: 'noopener' }, app.city.source.name || app.city.source.url) : app.city.source.name,
+        app.city.source.license ? ` · ${app.city.source.license}` : null, app.city.source.fetched ? ` · fetched ${app.city.source.fetched}` : null) : null,
       h('div', { class: 'hint' }, 'Drop a .json file anywhere. It is read in this tab only and never uploaded.'),
       S.status,
     );

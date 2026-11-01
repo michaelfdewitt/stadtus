@@ -6,7 +6,8 @@
 //   "name": "Dataset name",
 //   "fields":   { "<key>": { "type": "number|category|string|date", "label": "...", "scale": "linear|log|sqrt" } },  // optional
 //   "defaults": { "height": "<key>", "color": "<key>", "spire": "<key>", "label": "<key>" },                             // optional
-//   "items": [ { "id": "...", "name": "...", "path": ["a","b"] | "a/b", ...metadata } ]
+//   "items": [ { "id": "...", "name": "...", "path": ["a","b"] | "a/b", ...metadata } ],
+//   "source":   { "name", "url", "license", "fetched" }                                                                     // optional attribution
 // }
 
 import { CATEGORICAL, OTHER, NEUTRAL, MISSING, SEQUENTIAL, SEQUENTIAL_2, STATUS, rampColor } from './palette.js';
@@ -38,7 +39,7 @@ export function loadCity(doc) {
   const tree = buildTree(items);
   const defaults = pickDefaults(fields, doc.defaults || {});
   const actions = normalizeActions(doc.actions || [], fields);
-  return { name: doc.name || 'Untitled city', items, fields, tree, defaults, actions };
+  return { name: doc.name || 'Untitled city', items, fields, tree, defaults, actions, source: doc.source || null };
 }
 
 // ---------- fields ----------
@@ -52,6 +53,7 @@ export function inferFields(items, declared) {
     const decl = declared[k] || {};
     const vals = [];
     for (const it of items) { const v = it[k]; if (v != null && v !== '') vals.push(v); }
+    if (!vals.length) continue; // a field with no values carries nothing
     let type = decl.type || detectType(vals, items.length);
     const f = { key: k, label: decl.label || k, type, description: decl.description };
     if (type === 'number' || type === 'date') {
