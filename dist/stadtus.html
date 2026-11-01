@@ -1,0 +1,1917 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stadtus</title>
+<meta name="description" content="A 3D city view of any hierarchical dataset. Runs entirely in your browser; your data never leaves your machine.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect x=%271%27 y=%279%27 width=%274%27 height=%276%27 fill=%27%233987e5%27/%3E%3Crect x=%276%27 y=%273%27 width=%274%27 height=%2712%27 fill=%27%23eb6834%27/%3E%3Crect x=%2711%27 y=%276%27 width=%274%27 height=%279%27 fill=%27%231baf7a%27/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #0e0f12; --panel: #15171c; --panel-2: #1c1f26; --line: #2a2e37;
+  --text: #e8e7e2; --muted: #9a9a94; --accent: #3987e5; --warn: #fab219;
+  --radius: 6px; --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.45 var(--font); overflow: hidden; }
+body { display: flex; flex-direction: column; }
+main { flex: 1; display: flex; min-height: 0; }
+#viewport { flex: 1; position: relative; min-width: 0; }
+.city-canvas { display: block; }
+
+/* top bar */
+#topbar { height: 42px; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 600; letter-spacing: .01em; }
+.dataset { color: var(--muted); white-space: nowrap; }
+.where { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 2px; padding: 5px 10px; background: rgba(21,23,28,.9); border: 1px solid var(--line); border-radius: 18px; font-size: 13px; white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; }
+.crumb { color: var(--muted); text-decoration: none; padding: 1px 6px; border-radius: 4px; }
+a.crumb:hover { background: var(--panel-2); color: var(--text); }
+.crumb.current { color: var(--text); font-weight: 600; }
+.crumb-sep { color: var(--muted); }
+.crumb-menu { appearance: none; -webkit-appearance: none; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: 13px; padding: 1px 4px; width: 18px; text-align: center; cursor: pointer; border-radius: 4px; }
+.crumb-menu:hover { background: var(--panel-2); color: var(--text); }
+.crumb-menu option { background: var(--panel); color: var(--text); }
+.chips { flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; overflow: hidden; }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 1px 4px 1px 9px; font-size: 12px; white-space: nowrap; }
+.chip .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 4px; }
+.chip .x:hover { color: var(--text); }
+.chip.edits { border-color: var(--accent); gap: 8px; padding-right: 9px; }
+.chip.edits a { color: var(--accent); text-decoration: none; font-size: 11px; }
+.actions { padding: 8px 0 2px; border-top: 1px solid var(--line); gap: 4px; }
+.actions .btn, .actions .sel { padding: 3px 8px; font-size: 12px; }
+.quiet-actions { gap: 12px; }
+.legend-count .of { color: var(--line); color: #5c5f68; }
+.bar { display: inline-block; position: relative; width: 48px; height: 4px; margin-left: 10px; vertical-align: middle; background: var(--panel-2); border-radius: 2px; }
+.bar i { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; background: var(--accent); border-radius: 1px; }
+.sel.auto { width: auto; }
+.changed s { color: var(--muted); }
+.counts { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; margin-left: 8px; }
+.top-actions { display: flex; gap: 6px; }
+
+/* sidebar */
+#sidebar { width: 300px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+.sec { padding: 12px 14px 14px; border-bottom: 1px solid var(--line); }
+.sec h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--muted); text-transform: uppercase; }
+.sec-body { display: flex; flex-direction: column; gap: 8px; }
+.hint { color: var(--muted); font-size: 12px; }
+.hint.warn { color: var(--warn); }
+.quiet { color: var(--muted); }
+a { color: var(--accent); }
+a.quiet { color: var(--muted); font-size: 12px; }
+.status { color: var(--warn); font-size: 12px; min-height: 1em; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.row.nowrap { flex-wrap: nowrap; }
+.row.right { justify-content: flex-end; }
+.field { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 8px; color: var(--muted); }
+.field > span { font-size: 12px; }
+
+.btn, .sel, .inp { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; }
+.btn { cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.ghost { background: transparent; }
+.sel { min-width: 0; width: 100%; }
+.sel.narrow { width: 84px; flex: none; }
+.inp.small { width: 72px; padding: 3px 6px; font-family: var(--mono); font-size: 12px; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+
+/* legend */
+.legend-block { display: flex; flex-direction: column; gap: 2px; }
+.legend-title { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+.legend-title b { color: var(--text); font-weight: 600; }
+.legend-gradient { height: 10px; border-radius: 3px; }
+.legend-range { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; font-family: var(--mono); }
+.legend-row, .check { display: flex; align-items: center; gap: 8px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.legend-row:hover, .check:hover { background: var(--panel-2); }
+.legend-row.inactive { opacity: .35; }
+.swatch { width: 12px; height: 12px; border-radius: 2px; flex: none; background: var(--c); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
+.legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-count { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* filters */
+.range-filter { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.hist { width: 100%; height: 28px; display: block; }
+.dual-range { display: grid; margin-top: -2px; }
+.dual-range input { grid-area: 1 / 1; pointer-events: none; background: transparent; }
+.dual-range input::-webkit-slider-thumb { pointer-events: auto; }
+.dual-range input::-moz-range-thumb { pointer-events: auto; }
+.check-list { display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; }
+.check input { margin: 0; accent-color: var(--accent); }
+
+/* inspector */
+.insp-title { font-weight: 600; font-size: 14px; }
+.stats { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 12px; }
+.stats b { color: var(--text); font-family: var(--mono); font-weight: 500; }
+.sel-list { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; }
+.sel-item { flex: none; display: flex; gap: 8px; align-items: center; padding: 3px 4px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sel-item:hover { background: var(--panel-2); }
+table.detail { border-collapse: collapse; width: 100%; font-size: 12px; }
+table.detail th { text-align: left; color: var(--muted); font-weight: 500; padding: 3px 8px 3px 0; vertical-align: top; white-space: nowrap; }
+table.detail td { padding: 3px 0; word-break: break-word; font-family: var(--mono); white-space: nowrap; }
+
+/* tooltip */
+#tooltip { position: fixed; display: none; z-index: 10; pointer-events: none; background: rgba(21,23,28,.96); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; max-width: 320px; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
+.tt-title { font-weight: 600; }
+.tt-path { color: var(--muted); font-size: 11px; margin-bottom: 6px; font-family: var(--mono); }
+.tt-row { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; color: var(--muted); }
+.tt-row b { color: var(--text); font-family: var(--mono); font-weight: 500; }
+.tt-note { color: var(--warn); font-size: 11px; margin-top: 6px; }
+
+/* empty state + hint */
+.empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.empty-box { pointer-events: auto; max-width: 420px; text-align: center; color: var(--muted); }
+.empty-box h1 { font-size: 22px; font-weight: 600; color: var(--text); margin: 0 0 8px; }
+.empty-box p { margin: 8px 0; }
+.samples { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; text-align: left; }
+.sample { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; color: var(--muted); font-size: 12px; }
+.sample b { color: var(--text); font-weight: 600; font-size: 13px; }
+.sample:hover { border-color: var(--accent); }
+.hint-strip { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 18px; padding: 8px 14px; background: rgba(21,23,28,.92); border: 1px solid var(--line); border-radius: 20px; color: var(--muted); font-size: 12px; white-space: nowrap; transition: opacity 1s; cursor: pointer; }
+.hint-strip.fade { opacity: 0; }
+.hint-strip kbd { margin-right: 2px; }
+
+/* overlays */
+#help, .modal { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; }
+#help.open, .modal { display: flex; }
+.help-box, .modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px; max-width: 560px; width: calc(100% - 32px); max-height: 90vh; overflow: auto; }
+.help-box h2, .modal-box h2 { margin: 0 0 8px; font-size: 16px; }
+.help-box table { border-collapse: collapse; margin: 8px 0; }
+.help-box th { text-align: left; color: var(--muted); padding: 3px 12px 3px 0; white-space: nowrap; font-weight: 500; vertical-align: top; }
+.help-box td { padding: 3px 0; }
+kbd, code { font-family: var(--mono); background: var(--panel-2); border: 1px solid var(--line); padding: 0 5px; border-radius: 3px; font-size: 11px; }
+.modal-box .check-list { max-height: 260px; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px; margin: 8px 0; }
+.wiz-order { color: var(--muted); font-size: 12px; margin-bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.modal-box .field { margin: 6px 0; grid-template-columns: 110px 1fr; }
+@media (max-width: 800px) { main { flex-direction: column; } #sidebar { width: auto; max-height: 45vh; border-left: 0; border-top: 1px solid var(--line); } .hint-strip { display: none; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header id="topbar"></header>
+<main>
+  <div id="viewport"></div>
+  <aside id="sidebar"></aside>
+</main>
+<div id="tooltip"></div>
+<div id="help">
+  <div class="help-box">
+    <h2>Stadtus</h2>
+    <p>Every object in your data is a building. The hierarchy decides where it stands; three fields decide how tall it is, its color, and the length of the spire on its roof. The city never moves when you filter, so you can learn your way around it.</p>
+    <table>
+      <tr><th>Move</th><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly · <kbd>Q</kbd>/<kbd>E</kbd> down/up · hold <kbd>Shift</kbd> for speed</td></tr>
+      <tr><th>Look</th><td>drag to orbit · right-drag to pan · wheel zooms toward the cursor</td></tr>
+      <tr><th>Select</th><td>click a building · shift-click adds · click a district plate to select its contents</td></tr>
+      <tr><th>Zoom to</th><td>double-click a building or district · breadcrumb to go back up</td></tr>
+      <tr><th>Filter</th><td>click legend values to hide/show · shift-click shows only that value · drag the histogram sliders</td></tr>
+      <tr><th>Keys</th><td><kbd>R</kbd> reset view · <kbd>F</kbd> fly to selection · <kbd>Esc</kbd> clear filters and selection · <kbd>P</kbd> save PNG</td></tr>
+    </table>
+    <p>Load a JSON file: either <code>{ "name", "items": [ { "name", "path": ["a","b"], ...fields } ] }</code> or a plain array of objects (you'll be asked which keys form the hierarchy). Field types are inferred. Nothing is uploaded anywhere.</p>
+    <button class="btn" onclick="document.getElementById('help').classList.remove('open')">Close</button>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- src/palette.js ----
+// Color parameters for the city. Buildings are lit 3D surfaces, so the
+// saturated "light surface" categorical slots are used; the sequential ramp
+// is a single blue hue, light -> dark.
+
+const CATEGORICAL = [
+  '#2a78d6', // blue
+  '#eb6834', // orange
+  '#1baf7a', // aqua
+  '#eda100', // yellow
+  '#e87ba4', // magenta
+  '#008300', // green
+  '#6250d6', // violet
+  '#e34948', // red
+];
+const OTHER = '#8a8a85';      // "Other" bucket / unmapped
+const NEUTRAL = '#9a9a94';    // when no field is mapped
+const GHOST = '#3a3b3f';      // filtered-out buildings
+const MISSING = '#5a5b5f';    // value absent
+
+const SEQUENTIAL = [
+  '#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7',
+  '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b',
+];
+
+// Second sequential hue (orange) when two magnitudes are shown at once
+// (kept for a second magnitude encoding).
+const SEQUENTIAL_2 = [
+  '#fde3d6', '#fbd0bb', '#f8bb9d', '#f5a681', '#f29066', '#ef7a4d',
+  '#eb6834', '#d95926', '#c44d1f', '#ab4219', '#923814', '#782d10', '#5f230c',
+];
+
+const STATUS = {
+  good: '#0ca30c',
+  warning: '#fab219',
+  serious: '#ec835a',
+  critical: '#e34948',
+};
+
+const SELECTION = '#ffffff';
+const HOVER = '#ffffff';
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex([r, g, b]) {
+  return '#' + [r, g, b].map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+}
+
+// Interpolate along a ramp. t in [0,1].
+function rampColor(ramp, t) {
+  if (!(t >= 0)) t = 0;
+  if (t > 1) t = 1;
+  const pos = t * (ramp.length - 1);
+  const i = Math.floor(pos);
+  const j = Math.min(ramp.length - 1, i + 1);
+  const f = pos - i;
+  const a = hexToRgb(ramp[i]), b = hexToRgb(ramp[j]);
+  return rgbToHex([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]);
+}
+
+// ---- src/model.js ----
+// Data model: normalizes a city document, infers field types, builds the
+// hierarchy tree, and provides scales (height/color) and filter predicates.
+//
+// City document format:
+// {
+//   "name": "Dataset name",
+//   "fields":   { "<key>": { "type": "number|category|string|date", "label": "...", "scale": "linear|log|sqrt" } },  // optional
+//   "defaults": { "height": "<key>", "color": "<key>", "spire": "<key>", "label": "<key>" },                             // optional
+//   "items": [ { "id": "...", "name": "...", "path": ["a","b"] | "a/b", ...metadata } ]
+// }
+
+
+// Category sets that carry an order even when the data doesn't declare one.
+const KNOWN_ORDERS = [
+  ['low', 'medium', 'high', 'critical'],
+  ['trivial', 'minor', 'major', 'critical', 'blocker'],
+  ['p4', 'p3', 'p2', 'p1', 'p0'],
+];
+const SEVERITY_STATUS = { low: STATUS.good, medium: STATUS.warning, high: STATUS.serious, critical: STATUS.critical };
+
+const RESERVED = new Set(['id', 'name', 'path']);
+const DATE_RE = /^\d{4}-\d{2}(-\d{2})?([T ].*)?$/;
+
+function loadCity(doc) {
+  if (!doc || !Array.isArray(doc.items)) throw new Error('City document needs an "items" array');
+  const items = doc.items.map((raw, i) => {
+    const it = { ...raw };
+    it._i = i;
+    if (typeof it.path === 'string') it.path = it.path.split('/').filter(Boolean);
+    if (!Array.isArray(it.path)) it.path = [];
+    it.path = it.path.map(String);
+    if (it.name == null) it.name = it.id != null ? String(it.id) : `item ${i}`;
+    if (it.id == null) it.id = [...it.path, it.name].join('/') + '#' + i;
+    return it;
+  });
+  const fields = inferFields(items, doc.fields || {});
+  const tree = buildTree(items);
+  const defaults = pickDefaults(fields, doc.defaults || {});
+  const actions = normalizeActions(doc.actions || [], fields);
+  return { name: doc.name || 'Untitled city', items, fields, tree, defaults, actions };
+}
+
+// ---------- fields ----------
+
+function inferFields(items, declared) {
+  const keys = new Set();
+  for (const it of items) for (const k of Object.keys(it)) if (!RESERVED.has(k) && k[0] !== '_') keys.add(k);
+  for (const k of Object.keys(declared)) keys.add(k);
+  const fields = {};
+  for (const k of keys) {
+    const decl = declared[k] || {};
+    const vals = [];
+    for (const it of items) { const v = it[k]; if (v != null && v !== '') vals.push(v); }
+    let type = decl.type || detectType(vals, items.length);
+    const f = { key: k, label: decl.label || k, type, description: decl.description };
+    if (type === 'number' || type === 'date') {
+      let min = Infinity, max = -Infinity, n = 0;
+      for (const v of vals) { const x = toNumber(v, type); if (Number.isFinite(x)) { n++; if (x < min) min = x; if (x > max) max = x; } }
+      f.min = n ? min : 0; f.max = n ? max : 0;
+      f.scale = decl.scale || autoScale(f.min, f.max, type);
+      f.unit = decl.unit;
+    } else {
+      const counts = new Map();
+      for (const v of vals) { const s = String(v); counts.set(s, (counts.get(s) || 0) + 1); }
+      f.categories = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([value, count]) => ({ value, count }));
+      if (type === 'string' && f.categories.length <= 60 && f.categories.length < items.length * 0.5) f.type = type = 'category';
+      const order = decl.order || (type === 'category' && KNOWN_ORDERS.find(o => f.categories.length >= 2 && f.categories.every(c => o.includes(c.value.toLowerCase()))));
+      if (order) { // ordinal: sort by declared/known order
+        const rank = new Map(order.map((v, i) => [String(v).toLowerCase(), i]));
+        f.categories.sort((a, b) => (rank.get(a.value.toLowerCase()) ?? 1e9) - (rank.get(b.value.toLowerCase()) ?? 1e9));
+        f.ordinal = true;
+      }
+    }
+    f.missing = items.length - vals.length;
+    fields[k] = f;
+  }
+  return fields;
+}
+
+function detectType(vals, n) {
+  if (!vals.length) return 'string';
+  let nums = 0, dates = 0, bools = 0;
+  for (const v of vals) {
+    if (typeof v === 'number') nums++;
+    else if (typeof v === 'boolean') bools++;
+    else if (typeof v === 'string') {
+      if (v.trim() !== '' && !isNaN(Number(v))) nums++;
+      else if (DATE_RE.test(v) && !isNaN(Date.parse(v))) dates++;
+    }
+  }
+  if (nums === vals.length) return 'number';
+  if (dates === vals.length) return 'date';
+  if (bools === vals.length) return 'category';
+  const distinct = new Set(vals.map(String)).size;
+  return distinct <= Math.max(30, n * 0.05) ? 'category' : 'string';
+}
+
+function toNumber(v, type) {
+  if (v == null || v === '') return NaN;
+  if (type === 'date') return typeof v === 'number' ? v : Date.parse(v);
+  return typeof v === 'number' ? v : Number(v);
+}
+
+function autoScale(min, max, type) {
+  if (type === 'date') return 'linear';
+  if (min >= 0 && max > 0 && max / Math.max(min, 1) > 1000) return 'log';
+  return 'linear';
+}
+
+// value of a field for an item, typed (number/ms for numeric, string otherwise)
+function fieldValue(item, field) {
+  if (!field) return undefined;
+  const v = item[field.key];
+  if (v == null || v === '') return undefined;
+  if (field.type === 'number' || field.type === 'date') { const x = toNumber(v, field.type); return Number.isFinite(x) ? x : undefined; }
+  return String(v);
+}
+
+function formatValue(v, field) {
+  if (v === undefined || v === null) return '—';
+  if (!field) return String(v);
+  if (field.type === 'date') { const d = new Date(typeof v === 'number' ? v : Date.parse(v)); return isNaN(d) ? String(v) : d.toISOString().slice(0, 10); }
+  if (field.type === 'number') {
+    const x = typeof v === 'number' ? v : Number(v);
+    if (!Number.isFinite(x)) return String(v);
+    const s = Math.abs(x) >= 1e5 ? x.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 1 })
+      : Number.isInteger(x) ? x.toLocaleString() : x.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (!field.unit) return s;
+    return /^[$€£¥]$/.test(field.unit) ? `${field.unit}${s}` : `${s} ${field.unit}`;
+  }
+  return String(v);
+}
+
+function pickDefaults(fields, given) {
+  const list = Object.values(fields);
+  const numeric = list.filter(f => f.type === 'number');
+  const cats = list.filter(f => f.type === 'category');
+  const ok = k => k && fields[k] ? k : null;
+  const height = ok(given.height) || numeric[0]?.key || null;
+  const color = ok(given.color) || cats[0]?.key || numeric.find(f => f.key !== height)?.key || null;
+  const varying = numeric.filter(f => f.min < f.max);
+  const spire = ok(given.spire) || varying.find(f => f.key !== height && f.key !== color)?.key || null;
+  const label = ok(given.label) || 'name';
+  return { height, color, spire, label, heightScale: given.heightScale || (height ? fields[height].scale : 'linear') };
+}
+
+// ---------- tree ----------
+
+function buildTree(items) {
+  const root = { name: '', path: [], children: new Map(), items: [], count: 0, depth: 0, parent: null };
+  for (const it of items) {
+    let node = root;
+    node.count++;
+    for (const seg of it.path) {
+      let child = node.children.get(seg);
+      if (!child) {
+        child = { name: seg, path: [...node.path, seg], children: new Map(), items: [], count: 0, depth: node.depth + 1, parent: node };
+        node.children.set(seg, child);
+      }
+      node = child;
+      node.count++;
+    }
+    node.items.push(it);
+    it._node = node;
+  }
+  return root;
+}
+
+function findNode(root, path) {
+  let node = root;
+  for (const seg of path) { node = node.children.get(seg); if (!node) return null; }
+  return node;
+}
+
+function* walkNodes(node) {
+  yield node;
+  for (const c of node.children.values()) yield* walkNodes(c);
+}
+
+// ---------- scales ----------
+
+// Returns item -> [0,1] normalized height (NaN when missing).
+function makeHeightScale(field, scale = 'linear') {
+  if (!field || (field.type !== 'number' && field.type !== 'date')) return () => 0.5;
+  const { min, max } = field;
+  const span = max - min || 1;
+  const tf = scale === 'log' ? (x => Math.log1p(Math.max(0, x - min)) / Math.log1p(span))
+    : scale === 'sqrt' ? (x => Math.sqrt((x - min) / span))
+      : (x => (x - min) / span);
+  return item => { const v = fieldValue(item, field); return v === undefined ? NaN : tf(v); };
+}
+
+// Returns { colorOf(item) -> hex, legend }
+// legend: { type:'categorical', entries:[{value,color,count}] } | { type:'sequential', min, max, ramp } | { type:'none' }
+function makeColorScale(field, { ramp = SEQUENTIAL, maxSlots = CATEGORICAL.length - 1 } = {}) {
+  if (!field) return { colorOf: () => NEUTRAL, legend: { type: 'none' } };
+  if (field.type === 'number' || field.type === 'date') {
+    const { min, max } = field; const span = max - min || 1;
+    const tf = field.scale === 'log' ? (x => Math.log1p(Math.max(0, x - min)) / Math.log1p(span)) : (x => (x - min) / span);
+    return {
+      colorOf: item => { const v = fieldValue(item, field); return v === undefined ? MISSING : rampColor(ramp, tf(v)); },
+      legend: { type: 'sequential', field, min, max, ramp, scale: field.scale },
+    };
+  }
+  const cats = field.categories || [];
+  const map = new Map();
+  const entries = [];
+  if (field.ordinal) {
+    // ordered categories: one hue light -> dark, or the status palette for severity-like values
+    const severity = cats.every(c => SEVERITY_STATUS[c.value.toLowerCase()]);
+    cats.forEach((c, i) => {
+      const color = severity ? SEVERITY_STATUS[c.value.toLowerCase()] : rampColor(ramp.slice(3), cats.length > 1 ? i / (cats.length - 1) : 1);
+      map.set(c.value, color);
+      entries.push({ value: c.value, color, count: c.count });
+    });
+    if (field.missing > 0) entries.push({ value: '(missing)', color: MISSING, count: field.missing, missing: true });
+    return {
+      colorOf: item => { const v = fieldValue(item, field); return v === undefined ? MISSING : (map.get(v) || OTHER); },
+      legend: { type: 'categorical', field, entries, ordinal: true },
+    };
+  }
+  // categorical: fixed slot order by frequency rank; overflow folds into "Other"
+  cats.forEach((c, i) => {
+    const color = i < maxSlots ? CATEGORICAL[i] : OTHER;
+    map.set(c.value, color);
+    if (i < maxSlots) entries.push({ value: c.value, color, count: c.count });
+  });
+  if (cats.length > maxSlots) {
+    const rest = cats.slice(maxSlots);
+    entries.push({ value: 'Other', color: OTHER, count: rest.reduce((s, c) => s + c.count, 0), members: rest.map(c => c.value) });
+  }
+  if (field.missing > 0) entries.push({ value: '(missing)', color: MISSING, count: field.missing, missing: true });
+  return {
+    colorOf: item => { const v = fieldValue(item, field); return v === undefined ? MISSING : (map.get(v) || OTHER); },
+    legend: { type: 'categorical', field, entries },
+  };
+}
+
+
+// ---------- filters ----------
+// filter shapes:
+//   { type:'range',  field, min, max }           numeric/date, inclusive; null bound = open
+//   { type:'set',    field, values:Set, excludeMissing? }  category/string; keep items whose value is in set
+//   { type:'search', text }                        substring over name/path/string fields
+//   { type:'path',   prefix:[...] }                keep items under hierarchy prefix
+//   { type:'custom', test(item) }
+
+function compileFilters(filters, fields) {
+  const tests = [];
+  for (const f of filters) {
+    if (!f || f.enabled === false) continue;
+    if (f.type === 'range') {
+      const field = fields[f.field]; if (!field) continue;
+      const lo = f.min ?? -Infinity, hi = f.max ?? Infinity;
+      if (lo <= field.min && hi >= field.max && !f.excludeMissing) continue;
+      tests.push(it => { const v = fieldValue(it, field); return v === undefined ? !f.excludeMissing : v >= lo && v <= hi; });
+    } else if (f.type === 'set') {
+      const field = fields[f.field]; if (!field || !f.values) continue;
+      const set = f.values;
+      tests.push(it => { const v = fieldValue(it, field); return v === undefined ? !f.excludeMissing : set.has(v); });
+    } else if (f.type === 'search') {
+      const q = (f.text || '').trim().toLowerCase(); if (!q) continue;
+      const textFields = Object.values(fields).filter(x => x.type === 'string' || x.type === 'category');
+      tests.push(it => {
+        if (it.name.toLowerCase().includes(q)) return true;
+        if (it.path.join('/').toLowerCase().includes(q)) return true;
+        for (const tf of textFields) { const v = it[tf.key]; if (v != null && String(v).toLowerCase().includes(q)) return true; }
+        return false;
+      });
+    } else if (f.type === 'path') {
+      const p = f.prefix || []; if (!p.length) continue;
+      tests.push(it => { if (it.path.length < p.length) return false; for (let i = 0; i < p.length; i++) if (it.path[i] !== p[i]) return false; return true; });
+    } else if (f.type === 'custom' && typeof f.test === 'function') {
+      tests.push(f.test);
+    }
+  }
+  return item => { for (const t of tests) if (!t(item)) return false; return true; };
+}
+
+function applyFilters(items, filters, fields) {
+  const test = compileFilters(filters, fields);
+  const mask = new Uint8Array(items.length);
+  let n = 0;
+  for (let i = 0; i < items.length; i++) if (test(items[i])) { mask[i] = 1; n++; }
+  return { mask, count: n };
+}
+
+// Counts of a numeric/date field in `bins` equal-width bins over [min, max].
+function histogram(items, field, bins = 24) {
+  const counts = new Array(bins).fill(0);
+  const span = field.max - field.min || 1;
+  for (const it of items) {
+    const v = fieldValue(it, field);
+    if (v === undefined) continue;
+    counts[Math.min(bins - 1, Math.floor(((v - field.min) / span) * bins))]++;
+  }
+  return counts;
+}
+
+// ---------- actions and changes ----------
+// Document-level actions users can apply to selected items:
+//   { "id", "label", "set": { field: value, ... } }          fixed patch
+//   { "id", "label", "field": "<key>", "choices": [...] }    pick a value (choices default to the field's values)
+// Optional "when": { field: value | [values] } limits an action to items in that state.
+// An item may also list "actions": [ids] to restrict itself.
+
+function normalizeActions(list, fields) {
+  return list.filter(a => a && a.id && (a.set || a.field)).map(a => ({
+    id: String(a.id), label: a.label || a.id, set: a.set, field: a.field, when: a.when,
+    choices: a.field ? (a.choices || fields[a.field]?.categories?.map(c => c.value) || []) : null,
+  }));
+}
+
+function actionApplies(action, item) {
+  if (Array.isArray(item.actions) && !item.actions.includes(action.id)) return false;
+  if (action.when) for (const [k, v] of Object.entries(action.when)) {
+    const cur = item[k] == null ? null : String(item[k]);
+    if (!(Array.isArray(v) ? v.map(String) : [String(v)]).includes(cur)) return false;
+  }
+  return true;
+}
+
+// changes: Map<itemIndex, Map<field, {from, to}>>. Returns true if the item changed.
+function applyChange(changes, item, field, to) {
+  const from = item[field] === undefined ? null : item[field];
+  if (from === to) return false;
+  let m = changes.get(item._i);
+  if (!m) changes.set(item._i, m = new Map());
+  const rec = m.get(field);
+  if (rec) { if (rec.from === to) m.delete(field); else rec.to = to; } else m.set(field, { from, to });
+  if (to === null) delete item[field]; else item[field] = to;
+  if (!m.size) changes.delete(item._i);
+  return true;
+}
+
+function revertChanges(changes, items, index = null) {
+  const keys = index === null ? [...changes.keys()] : [index];
+  for (const i of keys) {
+    const m = changes.get(i); if (!m) continue;
+    for (const [field, rec] of m) { if (rec.from === null) delete items[i][field]; else items[i][field] = rec.from; }
+    changes.delete(i);
+  }
+}
+
+function changeList(changes, items) {
+  const out = [];
+  for (const [i, m] of changes) for (const [field, rec] of m) out.push({ id: items[i].id, path: items[i].path, field, from: rec.from, to: rec.to });
+  return out;
+}
+
+// Refresh category counts after edits without reordering (colors follow the
+// entity, never its rank). New values are appended.
+function recount(field, items) {
+  if (!field.categories) return;
+  const counts = new Map(field.categories.map(c => [c.value, 0]));
+  let missing = 0;
+  for (const it of items) { const v = it[field.key]; if (v == null || v === '') missing++; else { const k = String(v); counts.set(k, (counts.get(k) || 0) + 1); } }
+  field.categories = [...counts.entries()].map(([value, count]) => ({ value, count }));
+  field.missing = missing;
+}
+
+// Summary statistics over a set of items for a numeric field
+function summarize(items, field) {
+  if (!field || (field.type !== 'number' && field.type !== 'date')) return null;
+  let n = 0, sum = 0, min = Infinity, max = -Infinity;
+  for (const it of items) { const v = fieldValue(it, field); if (v === undefined) continue; n++; sum += v; if (v < min) min = v; if (v > max) max = v; }
+  return n ? { n, sum, mean: sum / n, min, max } : { n: 0 };
+}
+
+// ---- src/layout.js ----
+// Hierarchical quadtree-style layout: the hierarchy decides where buildings go.
+//
+// Every tree node owns a rectangle of ground (its "district"). The city is
+// built in two passes:
+//
+//  1. Bottom-up sizing. Each leaf needs a `unit` x `unit` cell. Each node needs
+//     a square big enough to hold its children's squares plus padding.
+//  2. Top-down placement. A node's rectangle is recursively cut into pieces for
+//     its children. Each cut is a guillotine cut across the longer axis, with
+//     the two sides sized by the area the children on each side need - and
+//     never thinner than the largest child on that side. Two cuts per level
+//     give the 4-quadrant look of a quadtree while guaranteeing no slivers.
+//
+// The layout depends only on the hierarchy - never on filters or the visual
+// mapping - so the city stays put while you explore it.
+
+const DEFAULT_LAYOUT = {
+  unit: 3.6,          // ground units per leaf cell (footprint + air)
+  gap: 1.4,           // air between a building and its cell edge (total per axis)
+  sidewalk: 0.6,      // strip inside a district plate before its contents
+  packSlack: 1.2,     // extra area factor for imperfect packing
+  maxFootprint: 2.2,  // building footprint clamp
+  minFootprint: 0.3,
+  roadMin: 1.4,       // narrowest road (deep in the tree)
+};
+
+// Road width between sibling districts at a given depth: wide avenues between
+// top-level districts, halving each level down. Scaled to the city size.
+function roadWidth(depth, count, o = DEFAULT_LAYOUT) {
+  const base = Math.min(30, Math.max(8, Math.sqrt(count) * 0.5));
+  return Math.max(o.roadMin, base / Math.pow(2, depth - 1));
+}
+
+function layoutCity(root, options = {}) {
+  const o = { ...DEFAULT_LAYOUT, ...options };
+  const buildings = [];
+  const districts = [];
+  let maxDepth = 0;
+  let undersized = 0;
+
+  const road = depth => roadWidth(depth, root.count, o);
+  const need = new Map(); // node -> required plate side (without its road)
+  sizeNode(root);
+  const side = need.get(root);
+  placeNode(root, { x: -side / 2, z: -side / 2, w: side, d: side }, 0);
+
+  function sizeNode(node) {
+    let area = node.items.length * o.unit * o.unit;
+    let maxChild = node.items.length ? o.unit : 0;
+    for (const c of node.children.values()) { const s = sizeNode(c) + road(c.depth); area += s * s; if (s > maxChild) maxChild = s; }
+    const s = Math.max(maxChild, Math.sqrt(area) * o.packSlack) + 2 * o.sidewalk;
+    need.set(node, s);
+    return s;
+  }
+
+  function placeNode(node, rect, depth) {
+    if (depth > maxDepth) maxDepth = depth;
+    const district = { node, rect, depth, road: depth ? road(depth) : 0, index: districts.length };
+    districts.push(district);
+    node._district = district;
+    const inner = inset(rect, Math.min(o.sidewalk, rect.w / 4, rect.d / 4));
+    const children = [];
+    for (const c of node.children.values()) children.push({ kind: 'node', node: c, side: need.get(c) + road(c.depth) });
+    for (const it of node.items) children.push({ kind: 'leaf', item: it, side: o.unit });
+    children.sort((a, b) => b.side - a.side);
+    pack(children, inner, depth);
+  }
+
+  function pack(children, rect, depth) {
+    if (!children.length) return;
+    if (children.length === 1) return placeChild(children[0], rect, depth);
+    // Two groups, balanced by required area (heaviest first, add to lighter).
+    const A = [], B = []; let aA = 0, aB = 0, mA = 0, mB = 0;
+    for (const c of children) {
+      const a = c.side * c.side;
+      if (aA <= aB) { A.push(c); aA += a; mA = Math.max(mA, c.side); } else { B.push(c); aB += a; mB = Math.max(mB, c.side); }
+    }
+    const horizontal = rect.w >= rect.d;          // cut across the longer axis
+    const L = horizontal ? rect.w : rect.d;
+    let f = aA / (aA + aB);
+    // Guarantee each side is at least as thick as its biggest child.
+    const minA = mA / L, minB = mB / L;
+    if (minA + minB <= 1) f = Math.min(1 - minB, Math.max(minA, f));
+    else f = minA / (minA + mB / L);              // cannot satisfy both: split proportionally to needs
+    const r1 = horizontal ? { x: rect.x, z: rect.z, w: rect.w * f, d: rect.d } : { x: rect.x, z: rect.z, w: rect.w, d: rect.d * f };
+    const r2 = horizontal ? { x: rect.x + rect.w * f, z: rect.z, w: rect.w * (1 - f), d: rect.d } : { x: rect.x, z: rect.z + rect.d * f, w: rect.w, d: rect.d * (1 - f) };
+    if (A.length === 1) placeChild(A[0], r1, depth); else pack(A, r1, depth);
+    if (B.length === 1) placeChild(B[0], r2, depth); else pack(B, r2, depth);
+  }
+
+  function placeChild(c, rect, depth) {
+    if (c.kind === 'node') {
+      // Half the road on each side of the cell; the plate fills what remains.
+      placeNode(c.node, inset(rect, road(depth + 1) / 2), depth + 1);
+    } else {
+      const cell = Math.min(rect.w, rect.d);
+      if (cell < o.unit - 1e-6) undersized++;
+      const s = clamp(cell - o.gap, o.minFootprint, o.maxFootprint);
+      const b = { item: c.item, x: rect.x + rect.w / 2, z: rect.z + rect.d / 2, w: s, d: s, depth, index: buildings.length };
+      c.item._building = b;
+      buildings.push(b);
+    }
+  }
+
+  return { buildings, districts, side, maxDepth, undersized, bounds: { x: -side / 2, z: -side / 2, w: side, d: side } };
+}
+
+function inset(r, p) {
+  p = Math.min(p, r.w / 2 - 0.01, r.d / 2 - 0.01);
+  if (p < 0) p = 0;
+  return { x: r.x + p, z: r.z + p, w: r.w - 2 * p, d: r.d - 2 * p };
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ---- src/renderer.js ----
+// Three.js renderer for the city. Buildings, caps and spires are InstancedMeshes
+// (one draw call each), district plates another. Picking uses instanceId.
+
+const PLATE_H = 0.35;
+const CAP_H = 0.3;            // flat cap on every building
+const SPIRE_W = 0.22;         // spire thickness
+const SPIRE_MAX = 0.5;        // longest spire as a fraction of the tallest building
+const SPIRE_COLOR = 0xe6e8ec;
+const STUB_H = 0.25;
+const SKY = 0xa9b6c2;            // hazy daylight horizon
+const ASPHALT = 0x35383d, CONCRETE = 0x6b6f76;
+const TREE_COUNT = 14000;
+const TILE = 2;                  // forest texture tile = TILE x city side
+const KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight']);
+const isTyping = e => /^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName);
+
+class CityRenderer {
+  constructor(container, handlers = {}) {
+    this.container = container;
+    this.handlers = handlers;
+    this.labelDepth = 3;
+    this.maxHeight = 30;
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.domElement.className = 'city-canvas';
+    container.appendChild(this.renderer.domElement);
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(SKY);
+    this.camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+    this.camera.position.set(80, 70, 90);
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.maxPolarAngle = Math.PI * 0.495;
+    this.controls.screenSpacePanning = false;
+    this.controls.zoomToCursor = true;
+
+    // WASD / QE fly navigation (keys held, applied per frame)
+    this.keys = new Set();
+    window.addEventListener('keydown', e => { if (!isTyping(e) && KEYS.has(e.code)) { this.keys.add(e.code); this.tween = null; e.preventDefault(); } });
+    window.addEventListener('keyup', e => this.keys.delete(e.code));
+    window.addEventListener('blur', () => this.keys.clear());
+
+    this.hemi = new THREE.HemisphereLight(0xdfe8f0, 0x3d5a3a, 1.1);
+    this.scene.add(this.hemi);
+    this.sun = new THREE.DirectionalLight(0xfff3e0, 2.0);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.bias = -0.0002;
+    this.sun.shadow.normalBias = 0.6;
+    this.scene.add(this.sun);
+    this.scene.add(this.sun.target);
+
+    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0x3a5a34, roughness: 1 }));
+    this.ground.rotation.x = -Math.PI / 2;
+    this.ground.receiveShadow = true;
+    this.scene.add(this.ground);
+
+    this.boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    this.boxGeo.translate(0, 0.5, 0); // origin at the base
+
+    this.hoverMesh = new THREE.Mesh(this.boxGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14, depthWrite: false }));
+    this.hoverMesh.visible = false;
+    this.scene.add(this.hoverMesh);
+
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = new THREE.Vector2();
+    this.pointerDirty = false;
+    this.pointerInside = false;
+    this.hit = null;
+    this.tween = null;
+    this.labels = [];
+
+    const el = this.renderer.domElement;
+    el.addEventListener('pointermove', e => { this.setPointer(e); this.pointerDirty = true; this.pointerInside = true; });
+    el.addEventListener('pointerleave', () => { this.pointerInside = false; this.setHit(null); });
+    el.addEventListener('pointerdown', e => { this.downAt = [e.clientX, e.clientY]; });
+    el.addEventListener('pointerup', e => {
+      if (!this.downAt) return;
+      const moved = Math.hypot(e.clientX - this.downAt[0], e.clientY - this.downAt[1]);
+      this.downAt = null;
+      if (moved < 4) { this.setPointer(e); this.pick(); this.handlers.onClick?.(this.hit, e); }
+    });
+    el.addEventListener('dblclick', e => { this.setPointer(e); this.pick(); this.handlers.onDoubleClick?.(this.hit, e); });
+
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(container);
+    this.resize();
+    this.renderer.setAnimationLoop(() => this.frame());
+  }
+
+  // ---------- data ----------
+
+  setLayout(layout, { maxHeight } = {}) {
+    this.clearLayout();
+    this.layout = layout;
+    const side = layout.side;
+    this.maxHeight = maxHeight || Math.max(20, side * 0.09);
+    this.scene.fog = new THREE.Fog(SKY, side * 1.2, side * 4);
+    this.ground.scale.set(side * 8, side * 8, 1);
+    this.ground.material.map?.dispose();
+    this.ground.material.map = forestTexture(side);
+    this.ground.material.map.repeat.set(8 / TILE, 8 / TILE);
+    this.ground.material.needsUpdate = true;
+    this.ground.position.y = -0.01;
+    this.plantForest(side);
+    this.camera.far = side * 6;
+    this.camera.updateProjectionMatrix();
+    this.controls.minDistance = 2;
+    this.controls.maxDistance = side * 3;
+
+    this.sunDir = new THREE.Vector3(0.35, 1.1, 0.25).normalize(); // high sun: short shadows
+    this.updateShadowFrustum(true);
+
+    // district plates
+    const D = layout.districts;
+    this.plates = new THREE.InstancedMesh(this.boxGeo, new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 }), D.length);
+    this.plates.receiveShadow = true;
+    this.plates.frustumCulled = false;
+    const m = new THREE.Matrix4(), c = new THREE.Color();
+    const dark = new THREE.Color(ASPHALT), light = new THREE.Color(CONCRETE);
+    for (let i = 0; i < D.length; i++) {
+      const d = D[i], r = d.rect;
+      m.makeScale(r.w, PLATE_H, r.d).setPosition(r.x + r.w / 2, d.depth * PLATE_H, r.z + r.d / 2);
+      this.plates.setMatrixAt(i, m);
+      c.copy(dark).lerp(light, Math.min(1, d.depth / Math.max(1, layout.maxDepth)));
+      this.plates.setColorAt(i, c);
+    }
+    this.plates.instanceMatrix.needsUpdate = true;
+    if (this.plates.instanceColor) this.plates.instanceColor.needsUpdate = true;
+    this.scene.add(this.plates);
+
+    // buildings, caps, spires
+    const N = layout.buildings.length;
+    this.bodies = new THREE.InstancedMesh(this.boxGeo, new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 }), N);
+    this.caps = new THREE.InstancedMesh(this.boxGeo, new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.05 }), N);
+    this.spires = new THREE.InstancedMesh(this.boxGeo, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.2 }), N);
+    for (const mesh of [this.bodies, this.caps, this.spires]) { mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; this.scene.add(mesh); }
+    this.selMesh = new THREE.InstancedMesh(this.boxGeo, new THREE.MeshBasicMaterial({ color: SELECTION, transparent: true, opacity: 0.45, depthWrite: false }), Math.max(1, N));
+    this.selMesh.count = 0; this.selMesh.frustumCulled = false;
+    this.scene.add(this.selMesh);
+    this.heights = new Float32Array(N);
+    this.topH = new Float32Array(N); // cap + spire above the body
+
+    // labels
+    this.buildLabels();
+    this.resetView(false);
+  }
+
+  // Canopy blobs around the city, placed where the ground texture says forest,
+  // so the 3D canopy and the painted canopy agree.
+  plantForest(side) {
+    const geo = new THREE.IcosahedronGeometry(0.5, 1);
+    geo.translate(0, 0.4, 0);
+    this.trees = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), TREE_COUNT);
+    this.trees.castShadow = true; this.trees.receiveShadow = true; this.trees.frustumCulled = false;
+    const m = new THREE.Matrix4(), c = new THREE.Color();
+    const inner = side * 0.55, outer = side * 1.8;
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    let n = 0, tries = 0;
+    while (n < TREE_COUNT && tries++ < TREE_COUNT * 8) {
+      const x = (rnd() * 2 - 1) * outer, z = (rnd() * 2 - 1) * outer;
+      if (Math.max(Math.abs(x), Math.abs(z)) < inner) continue;
+      const f = forestAt(x, z, side);
+      if (f.canopy * f.canopy < rnd()) continue;        // clustered in dense canopy, none in clearings
+      const w = 3 + rnd() * 4, h = w * (0.5 + rnd() * 0.4);
+      m.makeScale(w, h, w).setPosition(x, 0, z);
+      this.trees.setMatrixAt(n, m);
+      c.setRGB(f.r, f.g, f.b, THREE.SRGBColorSpace).offsetHSL(0, 0.04, (rnd() - 0.5) * 0.08);
+      this.trees.setColorAt(n, c);
+      n++;
+    }
+    this.trees.count = n;
+    this.scene.add(this.trees);
+  }
+
+  clearLayout() {
+    for (const k of ['plates', 'bodies', 'caps', 'spires', 'selMesh', 'trees']) {
+      if (this[k]) { this.scene.remove(this[k]); this[k].material.dispose(); this[k].dispose?.(); this[k] = null; }
+    }
+    for (const l of this.labels) { this.scene.remove(l.pivot); l.material.map.dispose(); l.material.dispose(); l.geometry.dispose(); }
+    this.labels = [];
+    this.hoverMesh.visible = false;
+    this.hit = null;
+  }
+
+  // District names are painted flat on the road in front of each district,
+  // like street names: sized by the road width (so top-level names are big
+  // and deep ones small).
+  buildLabels() {
+    for (const l of this.labels) { this.scene.remove(l.pivot); l.material.map.dispose(); l.material.dispose(); l.geometry.dispose(); }
+    this.labels = [];
+    const aniso = this.renderer.capabilities.getMaxAnisotropy();
+    for (const d of this.layout.districts) {
+      if (d.depth < 1 || d.depth > this.labelDepth || !d.node.name) continue;
+      const { texture, aspect } = textTexture(d.node.name, aniso);
+      let textH = d.road * 0.7, w = textH * aspect;
+      if (w > d.rect.w * 0.92) { w = d.rect.w * 0.92; textH = w / aspect; }
+      const geometry = new THREE.PlaneGeometry(w, textH);
+      // decal on the road: polygon offset keeps it from z-fighting with the plate
+      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const plane = new THREE.Mesh(geometry, material);
+      plane.rotation.x = -Math.PI / 2;
+      const pivot = new THREE.Object3D();
+      pivot.position.set(d.rect.x + d.rect.w / 2, d.depth * PLATE_H + 0.03, d.rect.z + d.rect.d + d.road / 4);
+      pivot.add(plane);
+      this.scene.add(pivot);
+      this.labels.push({ pivot, geometry, material, textH, district: d });
+    }
+  }
+
+  setLabelDepth(n) { this.labelDepth = n; if (this.layout) this.buildLabels(); }
+
+  // visuals: arrays indexed by building index
+  // heights: normalized 0..1 (NaN = missing); colors: hex strings;
+  // spires: normalized 0..1 spire length (NaN = none);
+  // visible: Uint8Array (0 = filtered out, drawn as a gray stub);
+  // emphasis: optional Uint8Array (0 = brushed out, drawn gray at full height)
+  update({ heights, colors, spires, visible, emphasis, ghostMode = 'ghost' }) {
+    if (!this.layout) return;
+    const B = this.layout.buildings;
+    const m = new THREE.Matrix4(), c = new THREE.Color(), zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    const ghost = new THREE.Color(GHOST), spireGhost = new THREE.Color(GHOST).offsetHSL(0, 0, 0.15), spireColor = new THREE.Color(SPIRE_COLOR);
+    for (let i = 0; i < B.length; i++) {
+      const b = B[i];
+      const base = (b.depth + 1) * PLATE_H;
+      const vis = !visible || visible[i];
+      let h;
+      if (!vis && ghostMode === 'hide') h = 0;
+      else if (!vis) h = STUB_H;
+      else { const t = heights[i]; h = Number.isFinite(t) ? STUB_H + t * this.maxHeight : STUB_H; }
+      this.heights[i] = h;
+      this.topH[i] = 0;
+      if (h <= 0) { this.bodies.setMatrixAt(i, zero); this.caps.setMatrixAt(i, zero); this.spires.setMatrixAt(i, zero); continue; }
+      const dim = !vis || (emphasis && !emphasis[i]);
+      m.makeScale(b.w, h, b.d).setPosition(b.x, base, b.z);
+      this.bodies.setMatrixAt(i, m);
+      c.set(dim ? GHOST : colors[i]);
+      this.bodies.setColorAt(i, c);
+      if (!vis) { this.caps.setMatrixAt(i, zero); this.spires.setMatrixAt(i, zero); continue; }
+      m.makeScale(b.w * 1.06, CAP_H, b.d * 1.06).setPosition(b.x, base + h + 0.02, b.z);
+      this.caps.setMatrixAt(i, m);
+      this.caps.setColorAt(i, dim ? ghost : c.offsetHSL(0, 0, 0.12)); // sunlit cap: lighter shade of the body
+      const t = spires ? spires[i] : NaN;
+      const L = Number.isFinite(t) ? t * this.maxHeight * SPIRE_MAX : 0;
+      if (L > 0.05) {
+        m.makeScale(SPIRE_W, L, SPIRE_W).setPosition(b.x, base + h + CAP_H, b.z);
+        this.spires.setMatrixAt(i, m);
+        this.spires.setColorAt(i, dim ? spireGhost : spireColor);
+      } else this.spires.setMatrixAt(i, zero);
+      this.topH[i] = CAP_H + L;
+    }
+    for (const mesh of [this.bodies, this.caps, this.spires]) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
+    if (this.hit?.type === 'building') this.placeHover(this.hit.index);
+  }
+
+  setSelection(buildingIndices) {
+    if (!this.layout) return;
+    const m = new THREE.Matrix4();
+    let n = 0;
+    for (const i of buildingIndices) {
+      const b = this.layout.buildings[i];
+      const h = this.heights[i];
+      if (h <= 0) continue;
+      // a tall translucent beacon, so the selection is findable from any distance
+      m.makeScale(b.w + 0.7, h + this.topH[i] + this.maxHeight * 0.45, b.d + 0.7).setPosition(b.x, (b.depth + 1) * PLATE_H - 0.02, b.z);
+      this.selMesh.setMatrixAt(n++, m);
+    }
+    this.selMesh.count = n;
+    this.selMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  placeHover(i) {
+    const b = this.layout.buildings[i];
+    const h = this.heights[i];
+    if (h <= 0) { this.hoverMesh.visible = false; return; }
+    this.hoverMesh.scale.set(b.w + 0.5, h + this.topH[i] + 0.3, b.d + 0.5);
+    this.hoverMesh.position.set(b.x, (b.depth + 1) * PLATE_H - 0.01, b.z);
+    this.hoverMesh.visible = true;
+  }
+
+  // ---------- picking ----------
+
+  setPointer(e) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.lastEvent = e;
+  }
+
+  pick() {
+    if (!this.layout) return;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    let hit = null;
+    const hb = this.raycaster.intersectObjects([this.bodies, this.caps, this.spires], false);
+    if (hb.length) hit = { type: 'building', index: hb[0].instanceId };
+    else {
+      {
+        const hp = this.raycaster.intersectObject(this.plates, false);
+        if (hp.length) {
+          // the plate closest to the camera is the deepest one hit at that point; prefer deepest district
+          let best = hp[0];
+          for (const h of hp) if (this.layout.districts[h.instanceId].depth > this.layout.districts[best.instanceId].depth) best = h;
+          hit = { type: 'district', index: best.instanceId };
+        }
+      }
+    }
+    this.setHit(hit);
+  }
+
+  setHit(hit) {
+    const same = (a, b) => (!a && !b) || (a && b && a.type === b.type && a.index === b.index);
+    if (same(hit, this.hit)) return;
+    this.hit = hit;
+    if (hit?.type === 'building') this.placeHover(hit.index); else this.hoverMesh.visible = false;
+    this.handlers.onHover?.(hit, this.lastEvent);
+  }
+
+  // ---------- camera ----------
+
+  focusRect(rect, { animate = true, elevation = 0.75 } = {}) {
+    const cx = rect.x + rect.w / 2, cz = rect.z + rect.d / 2;
+    const size = Math.max(rect.w, rect.d, 4);
+    const dist = (size / 2) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * 1.15;
+    const target = new THREE.Vector3(cx, (rect.y ?? 0), cz);
+    // keep current azimuth
+    const cur = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+    cur.y = 0;
+    if (cur.lengthSq() < 1e-6) cur.set(0.6, 0, 0.8);
+    cur.normalize();
+    const dir = new THREE.Vector3(cur.x * Math.cos(elevation), Math.sin(elevation), cur.z * Math.cos(elevation));
+    const pos = target.clone().addScaledVector(dir, dist);
+    this.flyTo(pos, target, animate);
+  }
+
+  focusBuilding(i, opts) {
+    const b = this.layout.buildings[i];
+    const h = this.heights[i] || 1;
+    const s = Math.max(b.w, b.d) * 6 + h * 0.8;
+    this.focusRect({ x: b.x - s / 2, z: b.z - s / 2, w: s, d: s, y: (b.depth + 1) * PLATE_H + h / 2 }, { elevation: 0.55, ...opts });
+  }
+
+  resetView(animate = true) {
+    if (!this.layout) return;
+    this.focusRect(this.layout.bounds, { animate, elevation: 0.85 });
+  }
+
+  flyTo(pos, target, animate = true) {
+    if (!animate) { this.camera.position.copy(pos); this.controls.target.copy(target); this.controls.update(); return; }
+    this.tween = { t0: performance.now(), dur: 750, p0: this.camera.position.clone(), p1: pos, t0v: this.controls.target.clone(), t1v: target };
+  }
+
+  // ---------- loop ----------
+
+  frame() {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.lastFrame || now)) / 1000);
+    this.lastFrame = now;
+    if (this.keys.size) this.fly(dt);
+    if (this.tween) {
+      const k = Math.min(1, (performance.now() - this.tween.t0) / this.tween.dur);
+      const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      this.camera.position.lerpVectors(this.tween.p0, this.tween.p1, e);
+      this.controls.target.lerpVectors(this.tween.t0v, this.tween.t1v, e);
+      if (k >= 1) this.tween = null;
+    }
+    this.controls.update();
+    if (this.pointerDirty && this.pointerInside && !this.downAt) { this.pointerDirty = false; this.pick(); }
+    if ((this.frameNo = (this.frameNo || 0) + 1) % 6 === 0) {
+      const d = this.districtAt(this.controls.target.x, this.controls.target.z);
+      if (d !== this.lookDistrict) { this.lookDistrict = d; this.handlers.onLook?.(d); }
+    }
+    this.updateLabels();
+    this.updateShadowFrustum();
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  // The shadow camera follows the look-at point and shrinks as you zoom in,
+  // so shadow texels stay fine where you are looking (no acne on building tops).
+  updateShadowFrustum(force = false) {
+    if (!this.layout) return;
+    const side = this.layout.side, t = this.controls.target;
+    const dist = this.camera.position.distanceTo(t);
+    const half = Math.min(side * 0.7, Math.max(30, dist * 1.1));
+    const key = `${Math.round(t.x / 5)},${Math.round(t.z / 5)},${Math.round(half / 5)}`;
+    if (!force && key === this.shadowKey) return;
+    this.shadowKey = key;
+    this.sun.target.position.set(t.x, 0, t.z);
+    this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDir, half * 3);
+    const sc = this.sun.shadow.camera;
+    sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
+    sc.near = half; sc.far = half * 5;
+    sc.updateProjectionMatrix();
+    this.sun.target.updateMatrixWorld();
+  }
+
+  // Move camera and orbit target together, relative to the camera heading on
+  // the ground plane. Speed scales with distance to the target (zoom level).
+  fly(dt) {
+    const k = this.keys;
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x); // fwd x up
+    const move = new THREE.Vector3();
+    if (k.has('KeyW') || k.has('ArrowUp')) move.add(fwd);
+    if (k.has('KeyS') || k.has('ArrowDown')) move.sub(fwd);
+    if (k.has('KeyD') || k.has('ArrowRight')) move.add(right);
+    if (k.has('KeyA') || k.has('ArrowLeft')) move.sub(right);
+    if (k.has('KeyE')) move.y += 1;
+    if (k.has('KeyQ')) move.y -= 1;
+    if (move.lengthSq() === 0) return;
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    let speed = Math.max(dist, 4) * 1.2;
+    if (k.has('ShiftLeft') || k.has('ShiftRight')) speed *= 3;
+    move.normalize().multiplyScalar(speed * dt);
+    const minY = 1.5;
+    if (this.camera.position.y + move.y < minY) move.y = minY - this.camera.position.y;
+    this.camera.position.add(move);
+    this.controls.target.add(move);
+  }
+
+  // Deepest district whose plate contains the ground point (x, z).
+  districtAt(x, z) {
+    if (!this.layout) return null;
+    let node = this.layout.districts[0].node, d = node._district;
+    const inside = (r, x, z) => x >= r.x && x <= r.x + r.w && z >= r.z && z <= r.z + r.d;
+    if (!inside(d.rect, x, z)) return null;
+    for (;;) {
+      let next = null;
+      for (const c of node.children.values()) if (inside(c._district.rect, x, z)) { next = c; break; }
+      if (!next) return d;
+      node = next; d = node._district;
+    }
+  }
+
+  // Labels run along their road; flip them when the camera is on the far side
+  // so they never read upside down. Hide ones too small to read.
+  updateLabels() {
+    if (!this.labels.length) return;
+    const h = this.renderer.domElement.clientHeight || 1;
+    const k = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
+    const cam = this.camera.position, t = this.controls.target;
+    const yaw = cam.z - t.z >= 0 ? 0 : Math.PI;
+    for (const l of this.labels) {
+      const p = l.pivot.position;
+      const dist = Math.hypot(cam.x - p.x, cam.y - p.y, cam.z - p.z);
+      l.pivot.visible = l.textH * k / Math.max(dist, 1) > 9;
+      l.pivot.rotation.y = yaw;
+    }
+  }
+
+  resize() {
+    const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1;
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+  }
+
+  screenshot() { this.renderer.render(this.scene, this.camera); return this.renderer.domElement.toDataURL('image/png'); }
+}
+
+function textTexture(text, anisotropy) {
+  const font = '600 64px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = font;
+  const tw = Math.ceil(ctx.measureText(text).width);
+  canvas.width = Math.max(16, tw + 24); canvas.height = 88;
+  ctx.font = font;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#e8e7e2';
+  ctx.fillText(text, 12, 46);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = anisotropy;
+  return { texture, aspect: canvas.width / canvas.height };
+}
+
+// ---------- forest ----------
+// Value noise + fbm; cheap and deterministic.
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const hash = (i, j) => { const t = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return t - Math.floor(t); };
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+  return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+}
+function fbm(x, y) { return 0.5 * vnoise(x, y) + 0.25 * vnoise(x * 2.03 + 7, y * 2.01 + 3) + 0.125 * vnoise(x * 4.1 + 13, y * 3.9 + 5) + 0.0625 * vnoise(x * 8.2 + 1, y * 7.9 + 9); }
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// What the land looks like at world (x, z): canopy density 0..1 and a color.
+// Periodic in the texture tile so the painted ground and the blobs line up.
+function forestAt(x, z, side) {
+  const tile = side * TILE;
+  const u = ((x % tile) + tile) % tile / tile, v = ((z % tile) + tile) % tile / tile;
+  const broad = fbm(u * 6, v * 6);                 // forest vs. open land
+  const fine = Math.min(1, Math.max(0, (fbm(u * 40 + 31, v * 40 + 17) - 0.3) / 0.4)); // canopy lumps, stretched
+  const clearing = Math.max(0, (broad - 0.57) * 5); // 0 = forest, 1 = field
+  // forest: dark to mid greens by canopy; fields: dry yellow-greens (sRGB)
+  const r = lerp(0.17, 0.42, fine), g = lerp(0.33, 0.56, fine), b = lerp(0.14, 0.26, fine);
+  const fr = lerp(0.50, 0.68, fine), fg = lerp(0.52, 0.62, fine), fb = lerp(0.26, 0.34, fine);
+  const k = Math.min(1, clearing);
+  return { canopy: (1 - k) * (0.35 + 0.65 * fine), r: lerp(r, fr, k), g: lerp(g, fg, k), b: lerp(b, fb, k) };
+}
+
+function forestTexture(side) {
+  const size = 1024, canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(size, size), d = img.data;
+  const tile = side * TILE;
+  for (let py = 0; py < size; py++) for (let px = 0; px < size; px++) {
+    const f = forestAt(px / size * tile, py / size * tile, side);
+    const grain = 0.92 + 0.16 * vnoise(px * 0.9, py * 0.9); // per-pixel grain
+    const o = (py * size + px) * 4;
+    d[o] = f.r * 255 * grain; d[o + 1] = f.g * 255 * grain; d[o + 2] = f.b * 255 * grain; d[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+// ---- src/ui.js ----
+// Sidebar (inspector, legend-as-filter, range filters, encoding, data),
+// top bar (breadcrumb, filter chips, count), tooltip, empty state, and the
+// JSON-array import wizard.
+
+const h = (tag, attrs = {}, ...children) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') el.className = v;
+    else if (k === 'style') el.style.cssText = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (v === true) el.setAttribute(k, '');
+    else if (v !== false && v != null) el.setAttribute(k, v);
+  }
+  for (const c of children.flat(Infinity)) if (c != null) el.append(c instanceof Node ? c : String(c));
+  return el;
+};
+const fmtN = n => n.toLocaleString();
+const ACCENT = '#3987e5', MUTED = '#4a4e5a';
+
+function buildUI(app, els) {
+  const { sidebar, tooltip, topbar, viewport } = els;
+  const S = {};
+
+  // ----- top bar -----
+  S.chips = h('div', { class: 'chips' });
+  topbar.append(
+    h('div', { class: 'brand' }, 'Stadtus'),
+    h('div', { class: 'dataset' }),
+    S.chips,
+    h('div', { class: 'top-actions' },
+      h('button', { class: 'btn ghost', title: 'Reset camera (R)', onclick: () => app.resetView() }, 'Reset view'),
+      h('button', { class: 'btn ghost', title: 'Help', onclick: () => els.help.classList.toggle('open') }, '?'),
+    ),
+  );
+
+  // ----- sidebar, ordered by how often each part is used -----
+  S.inspector = section('Selection');
+  S.legend = section('Legend');
+  S.filters = section('Filters');
+  S.encode = section('Encoding');
+  S.data = section('Data');
+  sidebar.append(S.inspector.el, S.legend.el, S.filters.el, S.encode.el, S.data.el);
+
+  // ----- empty state + one-time hint, inside the viewport -----
+  S.empty = h('div', { class: 'empty' });
+  S.where = h('div', { class: 'where' });
+  viewport.append(S.empty, S.where);
+
+  renderData(); renderEmpty(); renderInspector();
+
+  app.on('data', () => { renderData(); renderEmpty(); renderEncoding(); renderLegend(); renderFilters(); renderInspector(); renderTop(); renderWhere(); showHintOnce(); topbar.querySelector('.dataset').textContent = app.city.name; });
+  app.on('update', () => { renderLegend(); renderTop(); renderWhere(); if (app.selection.size) renderInspector(); });
+  app.on('selection', () => { renderInspector(); renderTop(); renderWhere(); });
+  app.on('where', renderWhere);
+  app.on('hover', ({ hit, event }) => renderTooltip(hit, event));
+  app.on('samples', () => { renderData(); renderEmpty(); });
+  app.on('filters', renderFilters);
+  app.on('status', msg => { S.status.textContent = msg || ''; });
+
+  const fileInput = h('input', { type: 'file', accept: '.json,application/json', style: 'display:none', onchange: e => { const f = e.target.files[0]; if (f) app.loadFile(f); e.target.value = ''; } });
+  document.body.append(fileInput);
+  const sampleLinks = () => app.samples.map((s, i) => [i ? ' · ' : null, h('a', { href: '#', title: s.description || '', onclick: e => { e.preventDefault(); app.loadUrl(s.file); } }, s.name)]);
+
+  // ----- Data -----
+  function renderData() {
+    const body = S.data.body; body.replaceChildren();
+    S.status = h('div', { class: 'status' });
+    body.append(
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Open JSON…'),
+        app.city ? h('a', { href: '#', class: 'quiet', onclick: e => { e.preventDefault(); app.snapshot(); } }, 'Save PNG') : null),
+      app.samples.length ? h('div', { class: 'hint' }, 'Samples: ', sampleLinks()) : null,
+      h('div', { class: 'hint' }, 'Drop a .json file anywhere. It is read in this tab only and never uploaded.'),
+      S.status,
+    );
+  }
+
+  function renderEmpty() {
+    S.empty.style.display = app.city ? 'none' : 'flex';
+    if (app.city) return;
+    S.empty.replaceChildren(h('div', { class: 'empty-box' },
+      h('h1', {}, 'Stadtus'),
+      h('p', {}, 'Every object in your data becomes a building. The hierarchy decides where it stands; three fields decide its height, color, and spire.'),
+      h('p', {}, h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Open JSON…'), ' or drop a file here'),
+      app.samples.length ? h('div', { class: 'samples' }, app.samples.map(s => h('a', { href: '#', class: 'sample', onclick: e => { e.preventDefault(); app.loadUrl(s.file); } },
+        h('b', {}, s.name), s.description ? h('span', {}, s.description) : null))) : null,
+      h('p', { class: 'hint' }, 'Your data stays in this browser tab.'),
+    ));
+  }
+
+  function showHintOnce() {
+    let seen = false;
+    try { seen = localStorage.getItem('stadtus.hint') === '1'; } catch { /* storage unavailable */ }
+    if (seen) return;
+    try { localStorage.setItem('stadtus.hint', '1'); } catch { /* ignore */ }
+    const strip = h('div', { class: 'hint-strip', onclick: () => strip.remove() },
+      h('span', {}, h('kbd', {}, 'W'), h('kbd', {}, 'A'), h('kbd', {}, 'S'), h('kbd', {}, 'D'), ' fly'), h('span', {}, h('kbd', {}, 'Q'), h('kbd', {}, 'E'), ' down / up'),
+      h('span', {}, 'drag to orbit · wheel to zoom'), h('span', {}, 'click selects · double-click zooms in'), h('span', {}, h('kbd', {}, '?'), ' help'));
+    viewport.append(strip);
+    setTimeout(() => strip.classList.add('fade'), 9000);
+    setTimeout(() => strip.remove(), 10000);
+  }
+
+  // ----- Encoding -----
+  function renderEncoding() {
+    const body = S.encode.body; body.replaceChildren();
+    if (!app.city) return;
+    const F = Object.values(app.city.fields);
+    const numeric = F.filter(f => f.type === 'number' || f.type === 'date');
+    const m = app.mapping;
+    const fieldSelect = (key, options, allowNone) => h('select', { class: 'sel', onchange: e => app.setMapping({ [key]: e.target.value || null }) },
+      allowNone ? h('option', { value: '', selected: !m[key] }, '(none)') : null,
+      options.map(f => h('option', { value: f.key, selected: m[key] === f.key }, f.label)));
+    body.append(
+      labeled('Height', h('div', { class: 'row nowrap' }, fieldSelect('height', numeric, true),
+        h('select', { class: 'sel narrow', title: 'Height scale', onchange: e => app.setMapping({ heightScale: e.target.value }) },
+          ['linear', 'sqrt', 'log'].map(s => h('option', { value: s, selected: m.heightScale === s }, s))))),
+      labeled('Color', fieldSelect('color', F, true)),
+      labeled('Spire', fieldSelect('spire', numeric, true)),
+      labeled('Label', fieldSelect('label', [{ key: 'name', label: 'name' }, ...F.filter(f => f.type !== 'number')], false)),
+    );
+  }
+
+  // ----- Legend (doubles as the category filter) -----
+  function renderLegend() {
+    const body = S.legend.body; body.replaceChildren();
+    if (!app.city) return;
+    body.append(legendBlock('Color', app.colorScale, app.mapping.color));
+    const hf = app.city.fields[app.mapping.height], sf = app.city.fields[app.mapping.spire];
+    if (hf) body.append(h('div', { class: 'legend-block' }, h('div', { class: 'legend-title' }, 'Height ', h('b', {}, hf.label), h('span', { class: 'quiet' }, ` ${formatValue(hf.min, hf)} to ${formatValue(hf.max, hf)}, ${app.mapping.heightScale}`))));
+    if (sf) body.append(h('div', { class: 'legend-block' }, h('div', { class: 'legend-title' }, 'Spire ', h('b', {}, sf.label), h('span', { class: 'quiet' }, ` ${formatValue(sf.min, sf)} to ${formatValue(sf.max, sf)}, ${sf.scale}`))));
+  }
+
+  function legendBlock(title, scale, fieldKey) {
+    const field = app.city.fields[fieldKey];
+    const block = h('div', { class: 'legend-block' });
+    block.append(h('div', { class: 'legend-title' }, title + ' ', field ? h('b', {}, field.label) : h('i', {}, 'none')));
+    if (!scale || scale.legend.type === 'none') return block;
+    const L = scale.legend;
+    const swatchClass = 'swatch';
+    const mark = e => h('span', { class: swatchClass, style: `--c:${e.color}` });
+    if (L.type === 'sequential') {
+      if (L.min === L.max) { block.append(h('div', { class: 'legend-row' }, h('span', { class: swatchClass, style: `--c:${scale.colorOf({ [field.key]: L.min })}` }), h('span', { class: 'legend-label' }, 'all ', formatValue(L.min, field)))); return block; }
+      const grad = `linear-gradient(90deg, ${L.ramp.join(',')})`;
+      block.append(h('div', { class: 'legend-gradient', style: `background:${grad}` }),
+        h('div', { class: 'legend-range' }, h('span', {}, formatValue(L.min, field)), L.scale === 'log' ? h('span', {}, 'log') : null, h('span', {}, formatValue(L.max, field))));
+      return block;
+    }
+    const flt = app.filters.get('set:' + field.key);
+    const shown = visibleCounts(field);
+    for (const e of L.entries) {
+      const active = !flt || (e.missing ? !flt.excludeMissing : e.members ? e.members.some(v => flt.values.has(v)) : flt.values.has(e.value));
+      const vis = e.missing ? shown.missing : (e.members || [e.value]).reduce((n, v) => n + (shown.counts.get(v) || 0), 0);
+      block.append(h('div', {
+        class: 'legend-row' + (active ? '' : ' inactive'),
+        title: 'Click to hide or show. Shift-click to show only this. Hover to highlight.',
+        onclick: ev => toggleCategory(field, e, ev.shiftKey),
+        onmouseenter: () => app.setBrush({ field: field.key, values: new Set(e.missing ? [] : e.members || [e.value]), missing: !!e.missing }),
+        onmouseleave: () => app.setBrush(null),
+      }, mark(e), h('span', { class: 'legend-label' }, e.value),
+        h('span', { class: 'legend-count' }, fmtN(vis), vis !== e.count ? h('span', { class: 'of' }, ` / ${fmtN(e.count)}`) : null)));
+    }
+    return block;
+  }
+
+  // How many currently visible items carry each value of a category field.
+  function visibleCounts(field) {
+    const counts = new Map(); let missing = 0;
+    const items = app.city.items, vis = app.visible;
+    for (let i = 0; i < items.length; i++) {
+      if (!vis[i]) continue;
+      const v = fieldValue(items[i], field);
+      if (v === undefined) missing++; else counts.set(v, (counts.get(v) || 0) + 1);
+    }
+    return { counts, missing };
+  }
+
+  function toggleCategory(field, entry, only) {
+    const key = 'set:' + field.key;
+    const all = field.categories.map(c => c.value);
+    const flt = app.filters.get(key);
+    const values = new Set(flt ? flt.values : all);
+    let excludeMissing = flt ? !!flt.excludeMissing : false;
+    const members = entry.missing ? [] : entry.members || [entry.value];
+    if (only) { values.clear(); for (const v of members) values.add(v); excludeMissing = !entry.missing; }
+    else if (entry.missing) excludeMissing = !excludeMissing;
+    else { const on = members.some(v => values.has(v)); for (const v of members) on ? values.delete(v) : values.add(v); }
+    if (values.size === all.length && !excludeMissing) app.removeFilter(key);
+    else app.setFilter(key, { type: 'set', field: field.key, values, excludeMissing });
+  }
+
+  // ----- Filters: search + one histogram slider per numeric field -----
+  function renderFilters() {
+    const body = S.filters.body; body.replaceChildren();
+    if (!app.city) return;
+    const search = app.filters.get('search');
+    body.append(h('input', { class: 'inp', type: 'search', placeholder: 'Search names, paths, text', value: search?.text || '', oninput: e => app.setFilter('search', e.target.value ? { type: 'search', text: e.target.value } : null) }));
+    for (const f of Object.values(app.city.fields)) if (f.type === 'number' || f.type === 'date') body.append(rangeFilter(f));
+  }
+
+  function rangeFilter(f) {
+    const key = 'range:' + f.key;
+    const cur = app.filters.get(key);
+    const bins = histogram(app.city.items, f, 32);
+    const peak = Math.max(1, ...bins);
+    const canvas = h('canvas', { class: 'hist', width: 320, height: 28 });
+    const lo = h('input', { type: 'range', min: 0, max: 1000, value: norm(cur?.min ?? f.min) });
+    const hi = h('input', { type: 'range', min: 0, max: 1000, value: norm(cur?.max ?? f.max) });
+    const vals = h('div', { class: 'legend-range' });
+    function norm(v) { return Math.round(((v - f.min) / ((f.max - f.min) || 1)) * 1000); }
+    function denorm(t) { return f.min + (t / 1000) * (f.max - f.min); }
+    function draw() {
+      const a = +lo.value / 1000, b = +hi.value / 1000;
+      const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height, bw = W / bins.length;
+      ctx.clearRect(0, 0, W, H);
+      bins.forEach((n, i) => {
+        const x0 = i / bins.length, x1 = (i + 1) / bins.length;
+        ctx.fillStyle = x1 > a && x0 < b ? ACCENT : MUTED;
+        const bh = Math.max(n ? 1 : 0, (n / peak) * (H - 2));
+        ctx.fillRect(i * bw + 0.5, H - bh, bw - 1, bh);
+      });
+      const A = denorm(+lo.value), B = denorm(+hi.value);
+      vals.replaceChildren(h('span', {}, formatValue(A, f)), h('span', {}, formatValue(B, f)));
+    }
+    const apply = () => {
+      if (+lo.value > +hi.value) lo.value = hi.value;
+      if (+hi.value < +lo.value) hi.value = lo.value;
+      draw();
+      const a = +lo.value, b = +hi.value;
+      if (a <= 0 && b >= 1000) app.removeFilter(key); else app.setFilter(key, { type: 'range', field: f.key, min: denorm(a), max: denorm(b) });
+    };
+    lo.addEventListener('input', apply); hi.addEventListener('input', apply);
+    lo.addEventListener('dblclick', () => { lo.value = 0; hi.value = 1000; apply(); });
+    hi.addEventListener('dblclick', () => { lo.value = 0; hi.value = 1000; apply(); });
+    draw();
+    return h('div', { class: 'range-filter' },
+      h('div', { class: 'legend-title' }, h('b', {}, f.label), h('span', { class: 'quiet' }, f.type === 'date' ? ' date' : f.unit ? ` ${f.unit}` : '')),
+      canvas, h('div', { class: 'dual-range' }, lo, hi), vals);
+  }
+
+  // ----- Inspector -----
+  function renderInspector() {
+    const body = S.inspector.body; body.replaceChildren();
+    if (!app.city) { body.append(h('div', { class: 'hint' }, 'Nothing loaded.')); return; }
+    const sel = [...app.selection].map(i => app.city.items[i]);
+    if (!sel.length) { body.append(h('div', { class: 'hint' }, 'Click a building to inspect it.')); return; }
+    const link = (label, title, fn) => h('a', { href: '#', class: 'quiet', title, onclick: e => { e.preventDefault(); fn(); } }, label);
+    const actions = h('div', { class: 'row quiet-actions' },
+      link('Fly to', 'F', () => app.flyToSelection()), link('Export JSON', 'Download the selected items', () => app.exportSelection()), link('Clear', 'Esc', () => app.clearSelection()));
+    const edits = actionBar(sel);
+    if (sel.length === 1) {
+      const it = sel[0];
+      body.append(...[h('div', { class: 'insp-title' }, app.labelOf(it)), h('div', { class: 'tt-path' }, it.path.join(' / ') || '(root)'),
+        app.visible[it._i] ? null : h('div', { class: 'hint warn' }, 'Hidden by the current filters.'),
+        detailTable(it), edits, actions].filter(Boolean));
+      return;
+    }
+    const hf = app.city.fields[app.mapping.height];
+    const stats = summarize(sel, hf);
+    const modified = sel.filter(it => app.changes.has(it._i)).length;
+    body.append(h('div', { class: 'insp-title' }, fmtN(sel.length), ' items', modified ? h('span', { class: 'quiet' }, ` · ${fmtN(modified)} modified`) : null),
+      stats && stats.n ? h('div', { class: 'stats' }, h('span', {}, hf.label, ' sum ', h('b', {}, formatValue(stats.sum, hf))), h('span', {}, 'mean ', h('b', {}, formatValue(stats.mean, hf))), h('span', {}, 'max ', h('b', {}, formatValue(stats.max, hf)))) : null,
+      edits, actions);
+    const list = h('div', { class: 'sel-list' });
+    for (const it of sel.slice(0, 100)) list.append(h('div', { class: 'sel-item', onclick: () => app.focusItem(it._i), title: it.path.join(' / ') }, h('span', { class: 'swatch', style: `--c:${app.colorScale.colorOf(it)}` }), app.labelOf(it)));
+    if (sel.length > 100) list.append(h('div', { class: 'hint' }, `and ${fmtN(sel.length - 100)} more`));
+    body.append(list);
+  }
+
+  // Buttons for actions every selected item can take; a select for choice actions.
+  function actionBar(sel) {
+    const avail = app.availableActions();
+    if (!avail.length && !sel.some(it => app.changes.has(it._i))) return null;
+    const bar = h('div', { class: 'row actions' });
+    for (const a of avail) {
+      if (a.set) bar.append(h('button', { class: 'btn', onclick: () => app.applyAction(a) }, a.label));
+      else bar.append(h('select', { class: 'sel auto', onchange: e => { if (e.target.value !== '') app.applyAction(a, e.target.value === '\0' ? null : e.target.value); } },
+        h('option', { value: '' }, a.label + '…'), a.choices.map(v => h('option', { value: v }, v)), h('option', { value: '\0' }, '(clear)')));
+    }
+    if (sel.length === 1 && app.changes.has(sel[0]._i)) bar.append(h('a', { href: '#', class: 'quiet', onclick: e => { e.preventDefault(); app.revert(sel[0]._i); } }, 'revert'));
+    return bar;
+  }
+
+  function detailTable(it) {
+    const rows = [];
+    const ch = app.changes.get(it._i);
+    for (const f of Object.values(app.city.fields)) {
+      const rec = ch?.get(f.key);
+      const v = fieldValue(it, f);
+      const val = formatValue(v, f);
+      const bar = (f.type === 'number' || f.type === 'date') && f.max > f.min && v !== undefined
+        ? h('span', { class: 'bar', title: `${formatValue(f.min, f)} to ${formatValue(f.max, f)}` }, h('i', { style: `left:${(100 * (v - f.min) / (f.max - f.min)).toFixed(1)}%` })) : null;
+      rows.push([f.label, [rec ? h('span', { class: 'changed' }, h('s', {}, formatValue(rec.from === null ? undefined : rec.from, f)), ' → ', val) : val, bar]]);
+    }
+    return h('table', { class: 'detail' }, rows.map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v))));
+  }
+
+  // ----- Tooltip: what is it, and the three encoded values -----
+  function renderTooltip(hit, event) {
+    if (!hit || !app.city) { tooltip.style.display = 'none'; return; }
+    tooltip.replaceChildren();
+    const F = app.city.fields, m = app.mapping;
+    if (hit.type === 'building') {
+      const it = app.layout.buildings[hit.index].item;
+      tooltip.append(h('div', { class: 'tt-title' }, app.labelOf(it)), h('div', { class: 'tt-path' }, it.path.join(' / ') || '(root)'));
+      const shown = new Set();
+      for (const key of [m.height, m.color, m.spire]) {
+        const f = F[key]; if (!f || shown.has(key)) continue; shown.add(key);
+        tooltip.append(h('div', { class: 'tt-row' }, h('span', {}, f.label), h('b', {}, formatValue(fieldValue(it, f), f))));
+      }
+      if (!app.visible[it._i]) tooltip.append(h('div', { class: 'tt-note' }, 'filtered out'));
+    } else {
+      const d = app.layout.districts[hit.index];
+      tooltip.append(h('div', { class: 'tt-title' }, d.node.name || app.city.name), h('div', { class: 'tt-path' }, d.node.path.join(' / ') || '(root)'),
+        h('div', { class: 'tt-row' }, h('span', {}, 'items'), h('b', {}, fmtN(d.node.count))));
+    }
+    tooltip.style.display = 'block';
+    const pad = 14, vw = window.innerWidth, vh = window.innerHeight;
+    const r = tooltip.getBoundingClientRect();
+    let x = event.clientX + pad, y = event.clientY + pad;
+    if (x + r.width > vw - 8) x = event.clientX - r.width - pad;
+    if (y + r.height > vh - 8) y = event.clientY - r.height - pad;
+    tooltip.style.left = x + 'px'; tooltip.style.top = y + 'px';
+  }
+
+  // ----- Top bar: breadcrumb, filter chips, count -----
+  // Floating "where am I": the selected item's place in the hierarchy, else
+  // the focused district, else the district under the camera's look-at point.
+  function renderWhere() {
+    S.where.replaceChildren();
+    if (!app.city) { S.where.style.display = 'none'; return; }
+    const sel = [...app.selection].map(i => app.city.items[i]);
+    let path, leaf = null, tail = null;
+    if (sel.length === 1) { path = sel[0].path; leaf = app.labelOf(sel[0]); }
+    else if (sel.length > 1) { path = commonPrefix(sel.map(it => it.path)); tail = `${fmtN(sel.length)} items`; }
+    else path = app.focusPath.length ? app.focusPath : app.look;
+    S.where.style.display = 'flex';
+    const crumb = (label, p) => h('a', { href: '#', class: 'crumb', onclick: e => { e.preventDefault(); app.focusNode(p); } }, label);
+    // Every separator is a menu of that level's districts, so you can move
+    // sideways (Bug tracker › [any component]) as well as down.
+    const menu = (prefix, current) => {
+      const node = findNode(app.city.tree, prefix);
+      if (!node || !node.children.size) return null;
+      const kids = [...node.children.values()].sort((a, b) => b.count - a.count);
+      return h('select', { class: 'crumb-menu', title: prefix.length ? `Districts in ${prefix[prefix.length - 1]}` : 'Districts', onchange: e => { if (e.target.value) app.focusNode([...prefix, e.target.value]); } },
+        h('option', { value: '' }, '›'),
+        kids.map(k => h('option', { value: k.name }, `${k.name === current ? '• ' : ''}${k.name}  (${fmtN(k.count)})`)));
+    };
+    S.where.append(crumb(app.city.name, []));
+    path.forEach((seg, i) => S.where.append(menu(path.slice(0, i), seg) || h('span', { class: 'crumb-sep' }, '›'), crumb(seg, path.slice(0, i + 1))));
+    const deeper = menu(path, null);
+    if (deeper) S.where.append(deeper);
+    if (leaf) S.where.append(h('span', { class: 'crumb-sep' }, '›'), h('span', { class: 'crumb current' }, leaf));
+    if (tail) S.where.append(h('span', { class: 'crumb-sep' }, '·'), h('span', { class: 'crumb current' }, tail));
+  }
+  function commonPrefix(paths) {
+    const out = [];
+    for (let i = 0; ; i++) { const seg = paths[0][i]; if (seg === undefined || !paths.every(p => p[i] === seg)) return out; out.push(seg); }
+  }
+
+  function renderTop() {
+    S.chips.replaceChildren();
+    if (!app.city) return;
+
+    const F = app.city.fields;
+    for (const [key, f] of app.filters) {
+      let text;
+      if (f.type === 'search') text = `“${f.text}”`;
+      else if (f.type === 'range') text = `${F[f.field].label} ${formatValue(f.min, F[f.field])} to ${formatValue(f.max, F[f.field])}`;
+      else if (f.type === 'set') text = `${F[f.field].label}: ${f.values.size <= 3 ? [...f.values].join(', ') || '(none)' : `${f.values.size} of ${F[f.field].categories.length}`}`;
+      else continue;
+      S.chips.append(h('span', { class: 'chip' }, text, h('button', { class: 'x', title: 'Remove filter', onclick: () => { app.removeFilter(key); renderFilters(); } }, '×')));
+    }
+    if (app.filters.size > 1) S.chips.append(h('a', { href: '#', class: 'quiet', title: 'Esc', onclick: e => { e.preventDefault(); app.clearFilters(); } }, 'clear all'));
+    if (app.changes.size) S.chips.append(h('span', { class: 'chip edits' }, `${fmtN(app.changes.size)} changed`,
+      h('a', { href: '#', onclick: e => { e.preventDefault(); app.exportChanges(); } }, 'export'),
+      h('a', { href: '#', onclick: e => { e.preventDefault(); app.revert(); } }, 'revert all')));
+    const total = app.city.items.length;
+    const count = app.visibleCount === total ? `${fmtN(total)} items` : `${fmtN(app.visibleCount)} of ${fmtN(total)}`;
+    S.chips.append(h('span', { class: 'counts' }, count + (app.selection.size ? ` · ${fmtN(app.selection.size)} selected` : '')));
+  }
+
+  function section(title) {
+    const body = h('div', { class: 'sec-body' });
+    return { el: h('section', { class: 'sec' }, h('h2', {}, title), body), body };
+  }
+  function labeled(label, control) { return h('label', { class: 'field' }, h('span', {}, label), control); }
+}
+
+// Wizard for a plain JSON array: choose which keys form the hierarchy and the name.
+function columnWizard(columns, sample, host) {
+  return new Promise(resolve => {
+    const chosen = [];
+    const order = h('div', { class: 'wiz-order' });
+    const renderOrder = () => { order.replaceChildren(chosen.length ? chosen.map((c, i) => h('span', { class: 'chip' }, `${i + 1}. ${c}`)) : h('i', {}, 'no hierarchy yet: all buildings in one district')); };
+    const list = h('div', { class: 'check-list' }, columns.map(c => h('label', { class: 'check' },
+      h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) chosen.push(c); else chosen.splice(chosen.indexOf(c), 1); renderOrder(); } }),
+      h('span', { class: 'legend-label' }, c), h('span', { class: 'legend-count' }, String(sample?.[c] ?? '').slice(0, 24)))));
+    renderOrder();
+    const nameSel = h('select', { class: 'sel' }, h('option', { value: '' }, '(none: use row number)'), columns.map(c => h('option', { value: c, selected: /^(name|title|label|id|file)$/i.test(c) }, c)));
+    const split = h('input', { class: 'inp small', value: '/', title: 'If a chosen key holds a full path like "a/b/c", split it on this character' });
+    const dlg = h('div', { class: 'modal' }, h('div', { class: 'modal-box' },
+      h('h2', {}, 'Import JSON array'),
+      h('p', {}, 'This file is a list of objects with no ', h('code', {}, 'path'), '. Pick the keys that form the hierarchy, in order, outermost first.'),
+      list, order,
+      h('label', { class: 'field' }, h('span', {}, 'Name key'), nameSel),
+      h('label', { class: 'field' }, h('span', {}, 'Split paths on'), split),
+      h('div', { class: 'row right' }, h('button', { class: 'btn ghost', onclick: () => { dlg.remove(); resolve(null); } }, 'Cancel'),
+        h('button', { class: 'btn', onclick: () => { dlg.remove(); resolve({ pathKeys: [...chosen], nameKey: nameSel.value || null, split: split.value || null }); } }, 'Build city')),
+    ));
+    host.append(dlg);
+  });
+}
+
+function downloadDataUrl(url, filename) {
+  const a = document.createElement('a'); a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove();
+}
+function downloadText(text, filename, type = 'application/json') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  downloadDataUrl(url, filename);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---- src/main.js ----
+// App shell: owns state (city, mapping, filters, selection, focus), wires the
+// renderer and UI together, and handles loading JSON.
+
+class CityApp {
+  constructor(els) {
+    this.els = els;
+    this.listeners = new Map();
+    this.city = null; this.layout = null; this.mapping = null;
+    this.filters = new Map();
+    this.selection = new Set();
+    this.visible = new Uint8Array(0); this.visibleCount = 0;
+    this.focusPath = [];
+    this.brush = null;      // { field, values:Set, missing:bool } while hovering a legend row
+    this.changes = new Map(); // edits made through actions: itemIndex -> field -> {from, to}
+    this.samples = [];
+
+    this.renderer = new CityRenderer(els.viewport, {
+      onHover: (hit, event) => this.emit('hover', { hit, event }),
+      onClick: (hit, event) => this.onClick(hit, event),
+      onDoubleClick: hit => this.onDoubleClick(hit),
+      onLook: d => { this.look = d ? d.node.path : []; this.emit('where'); },
+    });
+    this.look = []; // path of the district under the camera's look-at point
+    buildUI(this, els);
+
+    window.addEventListener('dragover', e => e.preventDefault());
+    window.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) this.loadFile(f); });
+    window.addEventListener('keydown', e => {
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+      if (e.key === 'Escape') this.clearAll();
+      else if (e.key === 'r') this.resetView();
+      else if (e.key === 'f') this.flyToSelection();
+      else if (e.key === 'p' && this.city) this.snapshot();
+    });
+  }
+
+  on(evt, fn) { (this.listeners.get(evt) || this.listeners.set(evt, []).get(evt)).push(fn); }
+  emit(evt, payload) { for (const fn of this.listeners.get(evt) || []) fn(payload); }
+  status(msg) { this.emit('status', msg); }
+
+  // ---------- loading ----------
+
+  async loadSamplesIndex(url = 'data/index.json') {
+    try { const r = await fetch(url); if (r.ok) { this.samples = await r.json(); this.emit('samples'); } } catch { /* no samples available */ }
+  }
+
+  async loadUrl(url) {
+    this.status(`Loading ${url}…`);
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      await this.loadDocument(await r.json(), url.split('/').pop());
+    } catch (e) { console.error(e); this.status(`Could not load ${url}: ${e.message}`); }
+  }
+
+  async loadFile(file) {
+    this.status(`Reading ${file.name}…`);
+    try { await this.loadDocument(JSON.parse(await file.text()), file.name.replace(/\.json$/i, '')); }
+    catch (e) { console.error(e); this.status(`Could not read ${file.name}: ${e.message}`); }
+  }
+
+  async loadDocument(doc, source = 'data') {
+    if (Array.isArray(doc)) doc = { name: source, items: doc };
+    if (!doc || !Array.isArray(doc.items) || !doc.items.length) { this.status('Expected a JSON object with a non-empty "items" array, or a JSON array of objects.'); return; }
+    if (!doc.items.some(it => it && it.path != null)) {
+      const columns = [...new Set(doc.items.flatMap(it => Object.keys(it || {})))];
+      const choice = await columnWizard(columns, doc.items[0], document.body);
+      if (!choice) { this.status('Import cancelled.'); return; }
+      doc = { ...doc, items: doc.items.map((it, i) => {
+        const path = [];
+        for (const k of choice.pathKeys) { const v = it[k]; if (v == null || v === '') continue; for (const seg of (choice.split ? String(v).split(choice.split) : [String(v)])) if (seg) path.push(seg); }
+        const out = { ...it, path, name: choice.nameKey ? String(it[choice.nameKey] ?? i) : String(i + 1) };
+        for (const k of choice.pathKeys) delete out[k];
+        return out;
+      }) };
+    }
+    this.city = loadCity({ name: source, ...doc });
+    this.layout = layoutCity(this.city.tree);
+    this.mapping = { ...this.city.defaults };
+    this.filters.clear(); this.selection.clear(); this.focusPath = []; this.brush = null; this.changes.clear();
+    this.renderer.setLayout(this.layout);
+    document.title = `${this.city.name} · Stadtus`;
+    this.status('');
+    this.refresh();
+    this.emit('data');
+  }
+
+  // ---------- state changes ----------
+
+  refresh() {
+    if (!this.city) return;
+    const { items, fields } = this.city;
+    const active = [...this.filters.values()];
+    if (this.focusPath.length) active.push({ type: 'path', prefix: this.focusPath });
+    const { mask, count } = applyFilters(items, active, fields);
+    this.visible = mask; this.visibleCount = count;
+
+    const m = this.mapping;
+    this.heightScale = makeHeightScale(fields[m.height], m.heightScale);
+    this.colorScale = makeColorScale(fields[m.color]);
+    this.spireScale = makeHeightScale(fields[m.spire], fields[m.spire]?.scale);
+
+    const B = this.layout.buildings, n = B.length;
+    const heights = new Float32Array(n), colors = new Array(n), spires = new Float32Array(n), visible = new Uint8Array(n);
+    const bf = this.brush && fields[this.brush.field];
+    const emphasis = bf ? new Uint8Array(n) : null;
+    for (let i = 0; i < n; i++) {
+      const it = B[i].item;
+      heights[i] = this.heightScale(it);
+      colors[i] = this.colorScale.colorOf(it);
+      spires[i] = fields[m.spire] ? this.spireScale(it) : NaN;
+      visible[i] = mask[it._i];
+      if (bf) { const v = fieldValue(it, bf); emphasis[i] = v === undefined ? this.brush.missing : this.brush.values.has(v); }
+    }
+    this.renderer.update({ heights, colors, spires, visible, emphasis });
+    this.syncSelection();
+    if (!this.brush) this.emit('update');
+  }
+
+  setMapping(patch) { Object.assign(this.mapping, patch); this.refresh(); }
+  setFilter(key, filter) { if (filter) this.filters.set(key, filter); else this.filters.delete(key); this.refresh(); }
+  removeFilter(key) { this.setFilter(key, null); }
+  clearFilters() { this.filters.clear(); this.refresh(); this.emit('filters'); }
+  // Esc: back to the whole city, nothing filtered or selected.
+  clearAll() {
+    if (!this.city) return;
+    this.selection.clear(); this.filters.clear(); this.focusPath = []; this.brush = null;
+    this.refresh(); this.emit('filters'); this.emit('selection');
+  }
+  setBrush(brush) { this.brush = brush; this.refresh(); }
+
+  select(indices, { additive = false } = {}) {
+    if (!additive) this.selection.clear();
+    if (additive && indices.length === 1 && this.selection.has(indices[0])) this.selection.delete(indices[0]);
+    else for (const i of indices) this.selection.add(i);
+    this.syncSelection(); this.emit('selection');
+  }
+  clearSelection() { if (!this.selection.size) return; this.selection.clear(); this.syncSelection(); this.emit('selection'); }
+  selectVisible() { const idx = []; for (let i = 0; i < this.visible.length; i++) if (this.visible[i]) idx.push(i); this.select(idx); }
+  syncSelection() { this.renderer.setSelection([...this.selection].map(i => this.city.items[i]._building.index)); }
+
+  onClick(hit, event) {
+    const additive = event.shiftKey || event.metaKey || event.ctrlKey;
+    if (!hit) { if (!additive) this.clearSelection(); return; }
+    if (hit.type === 'building') this.select([this.layout.buildings[hit.index].item._i], { additive });
+    else {
+      const node = this.layout.districts[hit.index].node;
+      const idx = this.city.items.filter(it => this.visible[it._i] && under(it, node.path)).map(it => it._i);
+      this.select(idx, { additive });
+    }
+  }
+  onDoubleClick(hit) {
+    if (!hit) return;
+    if (hit.type === 'building') this.renderer.focusBuilding(hit.index);
+    else this.focusNode(this.layout.districts[hit.index].node.path);
+  }
+
+  focusNode(path) {
+    const node = findNode(this.city.tree, path);
+    if (!node) return;
+    this.focusPath = node.path;
+    this.refresh();
+    this.renderer.focusRect(node._district.rect);
+  }
+  focusItem(i) { this.select([i]); this.renderer.focusBuilding(this.city.items[i]._building.index); }
+  flyToSelection() {
+    if (!this.selection.size) return;
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const i of this.selection) { const b = this.city.items[i]._building; x0 = Math.min(x0, b.x - b.w); z0 = Math.min(z0, b.z - b.d); x1 = Math.max(x1, b.x + b.w); z1 = Math.max(z1, b.z + b.d); }
+    if (this.selection.size === 1) this.renderer.focusBuilding(this.city.items[[...this.selection][0]]._building.index);
+    else this.renderer.focusRect({ x: x0 - 2, z: z0 - 2, w: x1 - x0 + 4, d: z1 - z0 + 4 });
+  }
+  resetView() { if (!this.city) return; this.focusPath = []; this.refresh(); this.renderer.resetView(); }
+
+  snapshot() { downloadDataUrl(this.renderer.screenshot(), `${this.city.name}.png`); }
+
+  // ---------- actions ----------
+  // Actions every selected item can take right now.
+  availableActions() {
+    const sel = [...this.selection].map(i => this.city.items[i]);
+    return sel.length ? this.city.actions.filter(a => sel.every(it => actionApplies(a, it))) : [];
+  }
+  applyAction(action, value) {
+    const patch = action.set || { [action.field]: value };
+    for (const i of this.selection) {
+      const it = this.city.items[i];
+      if (!actionApplies(action, it)) continue;
+      for (const [f, v] of Object.entries(patch)) applyChange(this.changes, it, f, v);
+    }
+    this.afterEdit(Object.keys(patch));
+  }
+  revert(index = null) {
+    const fields = new Set(); for (const [i, m] of this.changes) if (index === null || i === index) for (const f of m.keys()) fields.add(f);
+    revertChanges(this.changes, this.city.items, index);
+    this.afterEdit([...fields]);
+  }
+  afterEdit(fieldKeys) {
+    for (const k of fieldKeys) if (this.city.fields[k]) recount(this.city.fields[k], this.city.items);
+    this.refresh();
+    this.emit('selection');
+  }
+  exportChanges() {
+    downloadText(JSON.stringify({ name: this.city.name, changes: changeList(this.changes, this.city.items) }, null, 1), 'changes.json');
+  }
+
+  labelOf(it) { const k = this.mapping?.label; return k && k !== 'name' && it[k] != null ? String(it[k]) : it.name; }
+
+  exportSelection() {
+    const items = [...this.selection].map(i => { const o = {}; for (const [k, v] of Object.entries(this.city.items[i])) if (k[0] !== '_') o[k] = v; return o; });
+    downloadText(JSON.stringify({ name: `${this.city.name} (selection)`, items }, null, 1), 'selection.json');
+  }
+}
+
+function under(it, prefix) { if (it.path.length < prefix.length) return false; for (let i = 0; i < prefix.length; i++) if (it.path[i] !== prefix[i]) return false; return true; }
+
+// ---------- boot ----------
+const app = new CityApp({
+  viewport: document.getElementById('viewport'),
+  sidebar: document.getElementById('sidebar'),
+  topbar: document.getElementById('topbar'),
+  tooltip: document.getElementById('tooltip'),
+  help: document.getElementById('help'),
+});
+window.stadtus = app;
+app.loadSamplesIndex();
+const param = new URLSearchParams(location.search).get('data');
+if (param) app.loadUrl(param);
+</script>
+</body>
+</html>

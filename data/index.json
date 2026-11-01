@@ -1,0 +1,5 @@
+[
+  { "name": "Bug tracker (synthetic)", "file": "data/bugs.json", "description": "2,500 bugs by component. Set color to assignee: dee sits on the oldest bugs, bo only takes P0/P1. Zoom into frontend/editor for a fresh crash spike." },
+  { "name": "Personal expenses (synthetic)", "file": "data/expenses.json", "description": "A year of spending by category / subcategory / month" },
+  { "name": "Python standard library", "file": "data/python-stdlib.json", "description": "The files of this machine's Python stdlib; height = size, color = extension, spire = age" }
+]

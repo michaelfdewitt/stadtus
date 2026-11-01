@@ -1,0 +1,25 @@
+if (typeof console === "undefined") globalThis.console = { log: (...a) => print(a.join(" ")) };
+import { loadCity, actionApplies, applyChange, revertChanges, changeList, recount } from '../src/model.js';
+const city = loadCity(JSON.parse(readFile('data/bugs.json')));
+if (city.actions.length !== 7) throw new Error('actions not loaded');
+const fix = city.actions.find(a => a.id === 'fix'), assign = city.actions.find(a => a.id === 'assign');
+if (assign.choices.length !== 10) throw new Error('choices wrong');
+const open = city.items.find(it => it.status === 'open'), fixed = city.items.find(it => it.status === 'fixed');
+if (!actionApplies(fix, open) || actionApplies(fix, fixed)) throw new Error('when failed');
+const changes = new Map();
+const before = city.fields.status.categories.find(c => c.value === 'fixed').count;
+applyChange(changes, open, 'status', 'fixed');
+if (open.status !== 'fixed' || changes.size !== 1) throw new Error('apply failed');
+if (actionApplies(fix, open)) throw new Error('when should track live state');
+recount(city.fields.status, city.items);
+if (city.fields.status.categories.find(c => c.value === 'fixed').count !== before + 1) throw new Error('recount failed');
+applyChange(changes, open, 'assignee', 'bo');
+applyChange(changes, open, 'assignee', 'dee');
+const list = changeList(changes, city.items);
+console.log('diff:', JSON.stringify(list));
+if (list.length !== 2 || list[1].to !== 'dee') throw new Error('diff wrong');
+applyChange(changes, open, 'status', 'open'); // back to original removes the record
+if (changes.get(open._i).size !== 1) throw new Error('revert-by-reapply failed');
+revertChanges(changes, city.items);
+if (changes.size || open.assignee === 'dee') throw new Error('revert failed');
+console.log('CHANGES OK');

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stadtus</title>
+<meta name="description" content="A 3D city view of any hierarchical dataset. Runs entirely in your browser; your data never leaves your machine.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect x=%271%27 y=%279%27 width=%274%27 height=%276%27 fill=%27%233987e5%27/%3E%3Crect x=%276%27 y=%273%27 width=%274%27 height=%2712%27 fill=%27%23eb6834%27/%3E%3Crect x=%2711%27 y=%276%27 width=%274%27 height=%279%27 fill=%27%231baf7a%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="src/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header id="topbar"></header>
+<main>
+  <div id="viewport"></div>
+  <aside id="sidebar"></aside>
+</main>
+<div id="tooltip"></div>
+<div id="help">
+  <div class="help-box">
+    <h2>Stadtus</h2>
+    <p>Every object in your data is a building. The hierarchy decides where it stands; three fields decide how tall it is, its color, and the length of the spire on its roof. The city never moves when you filter, so you can learn your way around it.</p>
+    <table>
+      <tr><th>Move</th><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly · <kbd>Q</kbd>/<kbd>E</kbd> down/up · hold <kbd>Shift</kbd> for speed</td></tr>
+      <tr><th>Look</th><td>drag to orbit · right-drag to pan · wheel zooms toward the cursor</td></tr>
+      <tr><th>Select</th><td>click a building · shift-click adds · click a district plate to select its contents</td></tr>
+      <tr><th>Zoom to</th><td>double-click a building or district · breadcrumb to go back up</td></tr>
+      <tr><th>Filter</th><td>click legend values to hide/show · shift-click shows only that value · drag the histogram sliders</td></tr>
+      <tr><th>Keys</th><td><kbd>R</kbd> reset view · <kbd>F</kbd> fly to selection · <kbd>Esc</kbd> clear filters and selection · <kbd>P</kbd> save PNG</td></tr>
+    </table>
+    <p>Load a JSON file: either <code>{ "name", "items": [ { "name", "path": ["a","b"], ...fields } ] }</code> or a plain array of objects (you'll be asked which keys form the hierarchy). Field types are inferred. Nothing is uploaded anywhere.</p>
+    <button class="btn" onclick="document.getElementById('help').classList.remove('open')">Close</button>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
