@@ -119,11 +119,12 @@ table.detail td { padding: 3px 0; word-break: break-word; font-family: var(--mon
 
 /* empty state + hint */
 .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-.empty-box { pointer-events: auto; max-width: 420px; text-align: center; color: var(--muted); }
+.empty-box { pointer-events: auto; max-width: 440px; text-align: center; color: var(--muted); background: rgba(21,23,28,.96); border: 1px solid var(--line); border-radius: 12px; padding: 24px 28px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.empty-box .hint { color: var(--muted); }
 .empty-box h1 { font-size: 22px; font-weight: 600; color: var(--text); margin: 0 0 8px; }
 .empty-box p { margin: 8px 0; }
 .samples { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; text-align: left; }
-.sample { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; color: var(--muted); font-size: 12px; }
+.sample { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; color: var(--muted); font-size: 12px; background: var(--panel-2); }
 .sample b { color: var(--text); font-weight: 600; font-size: 13px; }
 .sample:hover { border-color: var(--accent); }
 .hint-strip { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 18px; padding: 8px 14px; background: rgba(21,23,28,.92); border: 1px solid var(--line); border-radius: 20px; color: var(--muted); font-size: 12px; white-space: nowrap; transition: opacity 1s; cursor: pointer; }

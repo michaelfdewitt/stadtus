@@ -2,7 +2,7 @@
   {
     "name": "Species observations, Denmark 2025",
     "file": "data/observations-dk.json",
-    "description": "9,850 iNaturalist records from GBIF, laid out by class / order / family. Height = how common the species is, color = kingdom, spire = day of year. Try color = IUCN Red List."
+    "description": "9,847 iNaturalist records from GBIF, laid out by class / order / family. Height = how common the species is, color = kingdom, spire = day of year. Try color = IUCN Red List."
   },
   {
     "name": "Bug tracker (synthetic)",
