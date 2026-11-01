@@ -144,7 +144,8 @@ function pickDefaults(fields, given) {
   const varying = numeric.filter(f => f.min < f.max);
   const spire = ok(given.spire) || varying.find(f => f.key !== height && f.key !== color)?.key || null;
   const label = ok(given.label) || 'name';
-  return { height, color, spire, label, heightScale: given.heightScale || (height ? fields[height].scale : 'linear') };
+  const time = ok(given.time) && (fields[given.time].type === 'date' || fields[given.time].type === 'number') ? given.time : null;
+  return { height, color, spire, label, time, heightScale: given.heightScale || (height ? fields[height].scale : 'linear') };
 }
 
 // ---------- tree ----------
@@ -361,6 +362,15 @@ export function recount(field, items) {
   for (const it of items) { const v = it[field.key]; if (v == null || v === '') missing++; else { const k = String(v); counts.set(k, (counts.get(k) || 0) + 1); } }
   field.categories = [...counts.entries()].map(([value, count]) => ({ value, count }));
   field.missing = missing;
+}
+
+// 1-based rank of `item` among `items` by a numeric field, descending (1 = largest).
+export function rankOf(item, items, field) {
+  const v = fieldValue(item, field);
+  if (v === undefined) return null;
+  let rank = 1, n = 0;
+  for (const it of items) { const w = fieldValue(it, field); if (w === undefined) continue; n++; if (w > v) rank++; }
+  return { rank, n };
 }
 
 // Summary statistics over a set of items for a numeric field

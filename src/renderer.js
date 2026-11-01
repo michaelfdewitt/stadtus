@@ -232,9 +232,10 @@ export class CityRenderer {
     for (let i = 0; i < B.length; i++) {
       const b = B[i];
       const base = (b.depth + 1) * PLATE_H;
-      const vis = !visible || visible[i];
+      const vis = !visible || visible[i] === 1;
       let h;
-      if (!vis && ghostMode === 'hide') h = 0;
+      if (visible && visible[i] === 2) h = 0;          // does not exist yet (time scrubber)
+      else if (!vis && ghostMode === 'hide') h = 0;
       else if (!vis) h = STUB_H;
       else { const t = heights[i]; h = Number.isFinite(t) ? STUB_H + t * this.maxHeight : STUB_H; }
       this.heights[i] = h;
@@ -347,6 +348,17 @@ export class CityRenderer {
     this.focusRect({ x: b.x - s / 2, z: b.z - s / 2, w: s, d: s, y: (b.depth + 1) * PLATE_H + h / 2 }, { elevation: 0.55, ...opts });
   }
 
+  getCamera() {
+    const r = v => +v.toFixed(1);
+    return { p: [r(this.camera.position.x), r(this.camera.position.y), r(this.camera.position.z)], t: [r(this.controls.target.x), r(this.controls.target.y), r(this.controls.target.z)] };
+  }
+  setCamera(p, t) {
+    this.tween = null;
+    this.camera.position.set(p[0], p[1], p[2]);
+    this.controls.target.set(t[0], t[1], t[2]);
+    this.controls.update();
+  }
+
   resetView(animate = true) {
     if (!this.layout) return;
     this.focusRect(this.layout.bounds, { animate, elevation: 0.85 });
@@ -379,6 +391,10 @@ export class CityRenderer {
     }
     this.updateLabels();
     this.updateShadowFrustum();
+    // report when the camera comes to rest, so the view can be saved
+    const sig = `${this.camera.position.x.toFixed(1)},${this.camera.position.y.toFixed(1)},${this.camera.position.z.toFixed(1)},${this.controls.target.x.toFixed(1)},${this.controls.target.z.toFixed(1)}`;
+    if (sig !== this.lastSig) { this.lastSig = sig; this.lastMove = now; this.cameraDirty = true; }
+    else if (this.cameraDirty && now - this.lastMove > 400) { this.cameraDirty = false; this.handlers.onCameraRest?.(); }
     this.renderer.render(this.scene, this.camera);
   }
 

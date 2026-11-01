@@ -33,7 +33,7 @@ Load data with **Open JSON…**, by dropping a `.json` file on the page, with
   ],
   "fields":   { "severity": { "type": "category", "order": ["low", "medium", "high", "critical"] },
                 "age_days": { "label": "age (days)", "scale": "sqrt" } },
-  "defaults": { "height": "age_days", "color": "severity", "spire": "comments", "label": "name" }
+  "defaults": { "height": "age_days", "color": "severity", "spire": "comments", "label": "name", "time": "opened" }
 }
 ```
 
@@ -43,6 +43,14 @@ and any flat metadata. Field types (`number`, `category`, `string`, `date`) are
 inferred; declare a field only to override the type, label, unit, scale
 (`linear`, `sqrt`, `log`) or category order. A plain JSON array of objects also
 loads: you are asked which keys form the hierarchy.
+
+## Views, time, triage
+
+The URL always encodes the current view (encoding, filters, focus, time cutoff,
+selection, camera), so copying it shares a finding. A `time` field turns on the
+scrubber at the bottom: buildings exist once their date passes the cutoff;
+Space plays. `J`/`K` step through visible buildings by height and keys `1`-`9`
+fire the numbered actions, so a queue can be worked without the mouse.
 
 ## Actions and diffs
 

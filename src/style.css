@@ -119,9 +119,20 @@ table.detail td { padding: 3px 0; word-break: break-word; font-family: var(--mon
 .sample { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; color: var(--muted); font-size: 12px; background: var(--panel-2); }
 .sample b { color: var(--text); font-weight: 600; font-size: 13px; }
 .sample:hover { border-color: var(--accent); }
-.hint-strip { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 18px; padding: 8px 14px; background: rgba(21,23,28,.92); border: 1px solid var(--line); border-radius: 20px; color: var(--muted); font-size: 12px; white-space: nowrap; transition: opacity 1s; cursor: pointer; }
+.hint-strip { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); display: flex; gap: 18px; padding: 8px 14px; background: rgba(21,23,28,.92); border: 1px solid var(--line); border-radius: 20px; color: var(--muted); font-size: 12px; white-space: nowrap; transition: opacity 1s; cursor: pointer; }
 .hint-strip.fade { opacity: 0; }
 .hint-strip kbd { margin-right: 2px; }
+
+/* time scrubber */
+.scrub { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: none; align-items: center; gap: 10px; width: min(640px, calc(100% - 32px)); padding: 6px 12px; background: rgba(21,23,28,.92); border: 1px solid var(--line); border-radius: 20px; }
+.scrub .play { width: 30px; padding: 2px 0; text-align: center; font-size: 11px; }
+.scrub-name { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.scrub input[type=range] { flex: 1; }
+.scrub-val { font-family: var(--mono); font-size: 12px; min-width: 80px; text-align: right; }
+.hint-strip { bottom: 64px; }
+.why { color: var(--muted); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+.why b { color: var(--text); font-weight: 500; }
+.actions .btn kbd { margin-right: 6px; font-size: 10px; padding: 0 4px; color: var(--muted); }
 
 /* overlays */
 #help, .modal { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; }

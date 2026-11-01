@@ -117,7 +117,7 @@ def main():
             "genus": {"type": "string"},
             "species": {"type": "string"},
         },
-        defaults={"height": "species_observations", "color": "kingdom", "spire": "day_of_year", "label": "species"},
+        defaults={"height": "species_observations", "color": "kingdom", "spire": "day_of_year", "label": "species", "time": "date"},
     )
     doc["source"] = {"name": "GBIF.org occurrence download via API", "url": API + "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v}), "license": "CC0 / CC BY (per dataset)", "fetched": dt.date.today().isoformat()}
     stadtus.write(doc, a.out)

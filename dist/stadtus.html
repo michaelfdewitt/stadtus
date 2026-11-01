@@ -128,9 +128,20 @@ table.detail td { padding: 3px 0; word-break: break-word; font-family: var(--mon
 .sample { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; color: var(--muted); font-size: 12px; background: var(--panel-2); }
 .sample b { color: var(--text); font-weight: 600; font-size: 13px; }
 .sample:hover { border-color: var(--accent); }
-.hint-strip { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 18px; padding: 8px 14px; background: rgba(21,23,28,.92); border: 1px solid var(--line); border-radius: 20px; color: var(--muted); font-size: 12px; white-space: nowrap; transition: opacity 1s; cursor: pointer; }
+.hint-strip { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); display: flex; gap: 18px; padding: 8px 14px; background: rgba(21,23,28,.92); border: 1px solid var(--line); border-radius: 20px; color: var(--muted); font-size: 12px; white-space: nowrap; transition: opacity 1s; cursor: pointer; }
 .hint-strip.fade { opacity: 0; }
 .hint-strip kbd { margin-right: 2px; }
+
+/* time scrubber */
+.scrub { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: none; align-items: center; gap: 10px; width: min(640px, calc(100% - 32px)); padding: 6px 12px; background: rgba(21,23,28,.92); border: 1px solid var(--line); border-radius: 20px; }
+.scrub .play { width: 30px; padding: 2px 0; text-align: center; font-size: 11px; }
+.scrub-name { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.scrub input[type=range] { flex: 1; }
+.scrub-val { font-family: var(--mono); font-size: 12px; min-width: 80px; text-align: right; }
+.hint-strip { bottom: 64px; }
+.why { color: var(--muted); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+.why b { color: var(--text); font-weight: 500; }
+.actions .btn kbd { margin-right: 6px; font-size: 10px; padding: 0 4px; color: var(--muted); }
 
 /* overlays */
 #help, .modal { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; }
@@ -170,6 +181,9 @@ kbd, code { font-family: var(--mono); background: var(--panel-2); border: 1px so
       <tr><th>Select</th><td>click a building · shift-click adds · click a district plate to select its contents</td></tr>
       <tr><th>Zoom to</th><td>double-click a building or district · breadcrumb to go back up</td></tr>
       <tr><th>Filter</th><td>click legend values to hide/show · shift-click shows only that value · drag the histogram sliders</td></tr>
+      <tr><th>Triage</th><td><kbd>J</kbd>/<kbd>K</kbd> next / previous building by height · <kbd>1</kbd>–<kbd>9</kbd> fire the numbered actions</td></tr>
+      <tr><th>Time</th><td>pick a Time field in Encoding; drag the scrubber or press <kbd>Space</kbd> to play. Buildings appear as their date passes</td></tr>
+      <tr><th>Share</th><td>the URL always holds the current view: encoding, filters, focus, time, selection, camera. Copy it to send a finding</td></tr>
       <tr><th>Keys</th><td><kbd>R</kbd> reset view · <kbd>F</kbd> fly to selection · <kbd>Esc</kbd> clear filters and selection · <kbd>P</kbd> save PNG</td></tr>
     </table>
     <p>Load a JSON file: either <code>{ "name", "items": [ { "name", "path": ["a","b"], ...fields } ] }</code> or a plain array of objects (you'll be asked which keys form the hierarchy). Field types are inferred. Nothing is uploaded anywhere.</p>
@@ -389,7 +403,8 @@ function pickDefaults(fields, given) {
   const varying = numeric.filter(f => f.min < f.max);
   const spire = ok(given.spire) || varying.find(f => f.key !== height && f.key !== color)?.key || null;
   const label = ok(given.label) || 'name';
-  return { height, color, spire, label, heightScale: given.heightScale || (height ? fields[height].scale : 'linear') };
+  const time = ok(given.time) && (fields[given.time].type === 'date' || fields[given.time].type === 'number') ? given.time : null;
+  return { height, color, spire, label, time, heightScale: given.heightScale || (height ? fields[height].scale : 'linear') };
 }
 
 // ---------- tree ----------
@@ -605,6 +620,15 @@ function recount(field, items) {
   for (const it of items) { const v = it[field.key]; if (v == null || v === '') missing++; else { const k = String(v); counts.set(k, (counts.get(k) || 0) + 1); } }
   field.categories = [...counts.entries()].map(([value, count]) => ({ value, count }));
   field.missing = missing;
+}
+
+// 1-based rank of `item` among `items` by a numeric field, descending (1 = largest).
+function rankOf(item, items, field) {
+  const v = fieldValue(item, field);
+  if (v === undefined) return null;
+  let rank = 1, n = 0;
+  for (const it of items) { const w = fieldValue(it, field); if (w === undefined) continue; n++; if (w > v) rank++; }
+  return { rank, n };
 }
 
 // Summary statistics over a set of items for a numeric field
@@ -963,9 +987,10 @@ class CityRenderer {
     for (let i = 0; i < B.length; i++) {
       const b = B[i];
       const base = (b.depth + 1) * PLATE_H;
-      const vis = !visible || visible[i];
+      const vis = !visible || visible[i] === 1;
       let h;
-      if (!vis && ghostMode === 'hide') h = 0;
+      if (visible && visible[i] === 2) h = 0;          // does not exist yet (time scrubber)
+      else if (!vis && ghostMode === 'hide') h = 0;
       else if (!vis) h = STUB_H;
       else { const t = heights[i]; h = Number.isFinite(t) ? STUB_H + t * this.maxHeight : STUB_H; }
       this.heights[i] = h;
@@ -1078,6 +1103,17 @@ class CityRenderer {
     this.focusRect({ x: b.x - s / 2, z: b.z - s / 2, w: s, d: s, y: (b.depth + 1) * PLATE_H + h / 2 }, { elevation: 0.55, ...opts });
   }
 
+  getCamera() {
+    const r = v => +v.toFixed(1);
+    return { p: [r(this.camera.position.x), r(this.camera.position.y), r(this.camera.position.z)], t: [r(this.controls.target.x), r(this.controls.target.y), r(this.controls.target.z)] };
+  }
+  setCamera(p, t) {
+    this.tween = null;
+    this.camera.position.set(p[0], p[1], p[2]);
+    this.controls.target.set(t[0], t[1], t[2]);
+    this.controls.update();
+  }
+
   resetView(animate = true) {
     if (!this.layout) return;
     this.focusRect(this.layout.bounds, { animate, elevation: 0.85 });
@@ -1110,6 +1146,10 @@ class CityRenderer {
     }
     this.updateLabels();
     this.updateShadowFrustum();
+    // report when the camera comes to rest, so the view can be saved
+    const sig = `${this.camera.position.x.toFixed(1)},${this.camera.position.y.toFixed(1)},${this.camera.position.z.toFixed(1)},${this.controls.target.x.toFixed(1)},${this.controls.target.z.toFixed(1)}`;
+    if (sig !== this.lastSig) { this.lastSig = sig; this.lastMove = now; this.cameraDirty = true; }
+    else if (this.cameraDirty && now - this.lastMove > 400) { this.cameraDirty = false; this.handlers.onCameraRest?.(); }
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1313,14 +1353,17 @@ function buildUI(app, els) {
   // ----- empty state + one-time hint, inside the viewport -----
   S.empty = h('div', { class: 'empty' });
   S.where = h('div', { class: 'where' });
-  viewport.append(S.empty, S.where);
+  S.scrub = h('div', { class: 'scrub' });
+  viewport.append(S.empty, S.where, S.scrub);
 
   renderData(); renderEmpty(); renderInspector();
 
-  app.on('data', () => { renderData(); renderEmpty(); renderEncoding(); renderLegend(); renderFilters(); renderInspector(); renderTop(); renderWhere(); showHintOnce(); topbar.querySelector('.dataset').textContent = app.city.name; });
+  app.on('data', () => { renderData(); renderEmpty(); renderEncoding(); renderLegend(); renderFilters(); renderInspector(); renderTop(); renderWhere(); renderScrub(); showHintOnce(); topbar.querySelector('.dataset').textContent = app.city.name; });
   app.on('update', () => { renderLegend(); renderTop(); renderWhere(); if (app.selection.size) renderInspector(); });
   app.on('selection', () => { renderInspector(); renderTop(); renderWhere(); });
   app.on('where', renderWhere);
+  app.on('time', () => { if (!playing) renderScrub(); });
+  app.on('time-toggle', () => S.scrubPlay?.click());
   app.on('hover', ({ hit, event }) => renderTooltip(hit, event));
   app.on('samples', () => { renderData(); renderEmpty(); });
   app.on('filters', renderFilters);
@@ -1389,7 +1432,38 @@ function buildUI(app, els) {
       labeled('Color', fieldSelect('color', F, true)),
       labeled('Spire', fieldSelect('spire', numeric, true)),
       labeled('Label', fieldSelect('label', [{ key: 'name', label: 'name' }, ...F.filter(f => f.type !== 'number')], false)),
+      labeled('Time', fieldSelect('time', numeric, true)),
     );
+  }
+
+  // ----- Time scrubber: buildings exist once the time field passes the cutoff -----
+  let playing = null;
+  function renderScrub() {
+    const f = app.city?.fields[app.mapping?.time];
+    if (playing) { cancelAnimationFrame(playing); playing = null; }
+    if (!f || !(f.max > f.min)) { S.scrub.style.display = 'none'; S.scrub.replaceChildren(); return; }
+    S.scrub.style.display = 'flex';
+    const cutoff = app.time.cutoff ?? f.max;
+    const pos = v => Math.round(((v - f.min) / (f.max - f.min)) * 1000);
+    const val = t => f.min + (t / 1000) * (f.max - f.min);
+    const slider = h('input', { type: 'range', min: 0, max: 1000, value: pos(cutoff), oninput: e => app.setTimeCutoff(+e.target.value >= 1000 ? null : val(+e.target.value)) });
+    const label = h('span', { class: 'scrub-val' }, formatValue(cutoff, f));
+    const play = h('button', { class: 'btn ghost play', title: 'Play (space)' }, '▶');
+    play.onclick = () => {
+      if (playing) { cancelAnimationFrame(playing); playing = null; play.textContent = '▶'; return; }
+      let t = +slider.value >= 1000 ? 0 : +slider.value, last = performance.now();
+      play.textContent = '❚❚';
+      const tick = now => {
+        t += (now - last) / 12000 * 1000; last = now; // the whole range in 12 seconds
+        if (t >= 1000) { app.setTimeCutoff(null); return; }
+        slider.value = t; label.textContent = formatValue(val(t), f);
+        app.setTimeCutoff(val(t));
+        playing = requestAnimationFrame(tick);
+      };
+      playing = requestAnimationFrame(tick);
+    };
+    S.scrubPlay = play;
+    S.scrub.replaceChildren(play, h('span', { class: 'scrub-name' }, f.label), slider, label);
   }
 
   // ----- Legend (doubles as the category filter) -----
@@ -1521,9 +1595,9 @@ function buildUI(app, els) {
     const edits = actionBar(sel);
     if (sel.length === 1) {
       const it = sel[0];
-      append(body, ...[h('div', { class: 'insp-title' }, app.labelOf(it)), h('div', { class: 'tt-path' }, it.path.join(' / ') || '(root)'),
-        app.visible[it._i] ? null : h('div', { class: 'hint warn' }, 'Hidden by the current filters.'),
-        detailTable(it), edits, actions].filter(Boolean));
+      append(body, h('div', { class: 'insp-title' }, app.labelOf(it)), h('div', { class: 'tt-path' }, it.path.join(' / ') || '(root)'),
+        app.visible[it._i] === 1 ? null : h('div', { class: 'hint warn' }, app.visible[it._i] === 2 ? 'Not yet, at this point in time.' : 'Hidden by the current filters.'),
+        whyLine(it), detailTable(it), edits, actions);
       return;
     }
     const hf = app.city.fields[app.mapping.height];
@@ -1538,13 +1612,30 @@ function buildUI(app, els) {
     append(body, list);
   }
 
+  // Why does this building look the way it does: rank of its height and spire
+  // values within its district and overall.
+  function whyLine(it) {
+    const parts = [];
+    for (const key of [app.mapping.height, app.mapping.spire]) {
+      const f = app.city.fields[key]; if (!f) continue;
+      const local = rankOf(it, it._node.items, f), all = rankOf(it, app.city.items, f);
+      if (!local) continue;
+      const where = it._node.name || app.city.name;
+      parts.push(h('span', {}, h('b', {}, f.label), ` ${ordinal(local.rank)} of ${fmtN(local.n)} in ${where}, ${ordinal(all.rank)} of ${fmtN(all.n)} overall`));
+    }
+    return parts.length ? h('div', { class: 'why' }, parts) : null;
+  }
+  function ordinal(n) { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return fmtN(n) + (s[(v - 20) % 10] || s[v] || s[0]); }
+
   // Buttons for actions every selected item can take; a select for choice actions.
+  // Fixed actions are numbered: keys 1-9 fire them.
   function actionBar(sel) {
     const avail = app.availableActions();
     if (!avail.length && !sel.some(it => app.changes.has(it._i))) return null;
     const bar = h('div', { class: 'row actions' });
+    let n = 0;
     for (const a of avail) {
-      if (a.set) bar.append(h('button', { class: 'btn', onclick: () => app.applyAction(a) }, a.label));
+      if (a.set) bar.append(h('button', { class: 'btn', title: `Key ${n + 1}`, onclick: () => app.applyAction(a) }, ++n <= 9 ? h('kbd', {}, n) : null, a.label));
       else bar.append(h('select', { class: 'sel auto', onchange: e => { if (e.target.value !== '') app.applyAction(a, e.target.value === '\0' ? null : e.target.value); } },
         h('option', { value: '' }, a.label + '…'), a.choices.map(v => h('option', { value: v }, v)), h('option', { value: '\0' }, '(clear)')));
     }
@@ -1707,6 +1798,9 @@ class CityApp {
     this.focusPath = [];
     this.brush = null;      // { field, values:Set, missing:bool } while hovering a legend row
     this.changes = new Map(); // edits made through actions: itemIndex -> field -> {from, to}
+    this.time = { cutoff: null }; // time scrubber: items whose mapping.time value is after cutoff do not exist yet
+    this.dataUrl = null;          // where the current document came from, if a URL
+    this.pendingView = parseView(location.hash); // a shared view to apply once data loads
     this.samples = [];
 
     this.renderer = new CityRenderer(els.viewport, {
@@ -1714,6 +1808,7 @@ class CityApp {
       onClick: (hit, event) => this.onClick(hit, event),
       onDoubleClick: hit => this.onDoubleClick(hit),
       onLook: d => { this.look = d ? d.node.path : []; this.emit('where'); },
+      onCameraRest: () => this.writeHash(),
     });
     this.look = []; // path of the district under the camera's look-at point
     buildUI(this, els);
@@ -1726,6 +1821,10 @@ class CityApp {
       else if (e.key === 'r') this.resetView();
       else if (e.key === 'f') this.flyToSelection();
       else if (e.key === 'p' && this.city) this.snapshot();
+      else if (e.key === 'j') this.step(1);
+      else if (e.key === 'k') this.step(-1);
+      else if (e.key === ' ' && this.city && this.mapping.time) { e.preventDefault(); this.emit('time-toggle'); }
+      else if (/^[1-9]$/.test(e.key) && this.selection.size) { const a = this.availableActions().filter(a => a.set)[+e.key - 1]; if (a) this.applyAction(a); }
     });
   }
 
@@ -1744,12 +1843,14 @@ class CityApp {
     try {
       const r = await fetch(url);
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      this.dataUrl = url;
       await this.loadDocument(await r.json(), url.split('/').pop());
     } catch (e) { console.error(e); this.status(`Could not load ${url}: ${e.message}`); }
   }
 
   async loadFile(file) {
     this.status(`Reading ${file.name}…`);
+    this.dataUrl = null;
     try { await this.loadDocument(JSON.parse(await file.text()), file.name.replace(/\.json$/i, '')); }
     catch (e) { console.error(e); this.status(`Could not read ${file.name}: ${e.message}`); }
   }
@@ -1773,11 +1874,16 @@ class CityApp {
     this.layout = layoutCity(this.city.tree);
     this.mapping = { ...this.city.defaults };
     this.filters.clear(); this.selection.clear(); this.focusPath = []; this.brush = null; this.changes.clear();
+    this.time = { cutoff: null };
     this.renderer.setLayout(this.layout);
     document.title = `${this.city.name} · Stadtus`;
     this.status('');
+    const view = this.pendingView; this.pendingView = null;
+    if (view && (!view.name || view.name === this.city.name)) this.applyView(view);
     this.refresh();
     this.emit('data');
+    if (view?.camera) this.renderer.setCamera(view.camera.p, view.camera.t);
+    this.writeHash();
   }
 
   // ---------- state changes ----------
@@ -1785,12 +1891,19 @@ class CityApp {
   refresh() {
     if (!this.city) return;
     const { items, fields } = this.city;
+    const m = this.mapping;
     const active = [...this.filters.values()];
     if (this.focusPath.length) active.push({ type: 'path', prefix: this.focusPath });
     const { mask, count } = applyFilters(items, active, fields);
     this.visible = mask; this.visibleCount = count;
+    const tf = fields[m.time];
+    if (tf && this.time.cutoff != null && this.time.cutoff < tf.max) {
+      for (let i = 0; i < items.length; i++) {
+        const v = fieldValue(items[i], tf);
+        if (v !== undefined && v > this.time.cutoff) { if (mask[i]) this.visibleCount--; mask[i] = 2; }
+      }
+    }
 
-    const m = this.mapping;
     this.heightScale = makeHeightScale(fields[m.height], m.heightScale);
     this.colorScale = makeColorScale(fields[m.color]);
     this.spireScale = makeHeightScale(fields[m.spire], fields[m.spire]?.scale);
@@ -1809,10 +1922,16 @@ class CityApp {
     }
     this.renderer.update({ heights, colors, spires, visible, emphasis });
     this.syncSelection();
-    if (!this.brush) this.emit('update');
+    if (!this.brush) { this.emit('update'); this.writeHash(); }
   }
 
-  setMapping(patch) { Object.assign(this.mapping, patch); this.refresh(); }
+  setMapping(patch) {
+    Object.assign(this.mapping, patch);
+    if ('time' in patch) { this.time = { cutoff: null }; this.emit('time'); }
+    this.refresh();
+  }
+  // Time scrubber: cutoff in the time field's units (ms for dates); null = everything.
+  setTimeCutoff(cutoff) { this.time = { cutoff }; this.refresh(); this.emit('time'); }
   setFilter(key, filter) { if (filter) this.filters.set(key, filter); else this.filters.delete(key); this.refresh(); }
   removeFilter(key) { this.setFilter(key, null); }
   clearFilters() { this.filters.clear(); this.refresh(); this.emit('filters'); }
@@ -1848,6 +1967,19 @@ class CityApp {
     if (!hit) return;
     if (hit.type === 'building') this.renderer.focusBuilding(hit.index);
     else this.focusNode(this.layout.districts[hit.index].node.path);
+  }
+
+  // J/K: walk the visible items in height order (tallest first).
+  step(dir) {
+    if (!this.city) return;
+    const hf = this.city.fields[this.mapping.height];
+    const order = this.city.items.filter(it => this.visible[it._i] === 1)
+      .map(it => [it._i, hf ? (fieldValue(it, hf) ?? -Infinity) : 0])
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(x => x[0]);
+    if (!order.length) return;
+    const cur = this.selection.size === 1 ? order.indexOf([...this.selection][0]) : -1;
+    const next = cur < 0 ? (dir > 0 ? 0 : order.length - 1) : (cur + dir + order.length) % order.length;
+    this.focusItem(order[next]);
   }
 
   focusNode(path) {
@@ -1904,6 +2036,57 @@ class CityApp {
     const items = [...this.selection].map(i => { const o = {}; for (const [k, v] of Object.entries(this.city.items[i])) if (k[0] !== '_') o[k] = v; return o; });
     downloadText(JSON.stringify({ name: `${this.city.name} (selection)`, items }, null, 1), 'selection.json');
   }
+}
+
+// ---------- shareable views (URL hash) ----------
+CityApp.prototype.serializeView = function () {
+  if (!this.city) return null;
+  const F = this.city.fields;
+  const filters = [];
+  for (const f of this.filters.values()) {
+    if (f.type === 'search') filters.push({ t: 's', q: f.text });
+    else if (f.type === 'range') filters.push({ t: 'r', f: f.field, a: f.min, b: f.max });
+    else if (f.type === 'set') {
+      const all = F[f.field].categories.map(c => c.value), inn = [...f.values];
+      const out = all.filter(v => !f.values.has(v));
+      filters.push(out.length < inn.length ? { t: 'c', f: f.field, out, m: f.excludeMissing ? 1 : 0 } : { t: 'c', f: f.field, in: inn, m: f.excludeMissing ? 1 : 0 });
+    }
+  }
+  const v = { name: this.city.name, map: this.mapping, filters, focus: this.focusPath, camera: this.renderer.getCamera() };
+  if (this.time.cutoff != null) v.time = this.time.cutoff;
+  if (this.selection.size && this.selection.size <= 50) v.sel = [...this.selection].map(i => this.city.items[i].id);
+  return v;
+};
+CityApp.prototype.applyView = function (v) {
+  const F = this.city.fields;
+  if (v.map) for (const [k, val] of Object.entries(v.map)) if (k === 'heightScale' || val === null || F[val] || (k === 'label' && val === 'name')) this.mapping[k] = val;
+  for (const f of v.filters || []) {
+    if (f.t === 's') this.filters.set('search', { type: 'search', text: f.q });
+    else if (f.t === 'r' && F[f.f]) this.filters.set('range:' + f.f, { type: 'range', field: f.f, min: f.a, max: f.b });
+    else if (f.t === 'c' && F[f.f]) {
+      const all = F[f.f].categories.map(c => c.value);
+      const values = new Set(f.in ? f.in : all.filter(x => !f.out.includes(x)));
+      this.filters.set('set:' + f.f, { type: 'set', field: f.f, values, excludeMissing: !!f.m });
+    }
+  }
+  if (Array.isArray(v.focus) && findNode(this.city.tree, v.focus)) this.focusPath = v.focus;
+  if (v.time != null) this.time = { cutoff: v.time };
+  if (Array.isArray(v.sel)) { const byId = new Map(this.city.items.map(it => [it.id, it._i])); for (const id of v.sel) if (byId.has(id)) this.selection.add(byId.get(id)); }
+};
+CityApp.prototype.writeHash = function () {
+  clearTimeout(this.hashTimer);
+  this.hashTimer = setTimeout(() => {
+    const v = this.serializeView();
+    if (!v) return;
+    const q = this.dataUrl ? `?data=${encodeURIComponent(this.dataUrl)}` : location.search;
+    history.replaceState(null, '', `${location.pathname}${q}#view=${encodeView(v)}`);
+  }, 300);
+};
+function encodeView(v) { return btoa(unescape(encodeURIComponent(JSON.stringify(v)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function parseView(hash) {
+  const m = /[#&]view=([^&]+)/.exec(hash || '');
+  if (!m) return null;
+  try { return JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch { return null; }
 }
 
 function under(it, prefix) { if (it.path.length < prefix.length) return false; for (let i = 0; i < prefix.length; i++) if (it.path[i] !== prefix[i]) return false; return true; }

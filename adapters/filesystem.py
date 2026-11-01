@@ -63,7 +63,7 @@ def main() -> None:
             "age_days": {"type": "number", "label": "age (days)"},
             "depth": {"type": "number"},
         },
-        defaults={"height": "size", "color": "ext", "spire": "age_days"},
+        defaults={"height": "size", "color": "ext", "spire": "age_days", "time": "modified"},
     )
     stadtus.write(doc, a.out)
 

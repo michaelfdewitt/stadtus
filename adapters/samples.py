@@ -113,7 +113,7 @@ def bugs(rng: random.Random, n: int = 2500):
             "age_days": {"label": "age (days)", "scale": "sqrt"},
             "customer_reports": {"label": "customer reports"},
         },
-        defaults={"height": "age_days", "color": "severity", "spire": "customer_reports", "label": "title"},
+        defaults={"height": "age_days", "color": "severity", "spire": "customer_reports", "label": "title", "time": "opened"},
         actions=[
             {"id": "fix", "label": "Mark fixed", "set": {"status": "fixed"}, "when": {"status": ["open", "in progress"]}},
             {"id": "wontfix", "label": "Won't fix", "set": {"status": "won't fix"}, "when": {"status": ["open", "in progress"]}},
@@ -158,7 +158,7 @@ def expenses(rng: random.Random):
     return stadtus.city(
         "Personal expenses", items,
         fields={"amount": {"unit": "$", "scale": "sqrt"}, "weekday": {"type": "category", "order": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}},
-        defaults={"height": "amount", "color": "method", "spire": "date", "label": "merchant"},
+        defaults={"height": "amount", "color": "method", "spire": "date", "label": "merchant", "time": "date"},
     )
 
 

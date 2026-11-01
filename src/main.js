@@ -1,6 +1,6 @@
 // App shell: owns state (city, mapping, filters, selection, focus), wires the
 // renderer and UI together, and handles loading JSON.
-import { loadCity, makeHeightScale, makeColorScale, applyFilters, findNode, fieldValue, actionApplies, applyChange, revertChanges, changeList, recount } from './model.js';
+import { loadCity, makeHeightScale, makeColorScale, applyFilters, findNode, fieldValue, toNumber, actionApplies, applyChange, revertChanges, changeList, recount } from './model.js';
 import { layoutCity } from './layout.js';
 import { CityRenderer } from './renderer.js';
 import { buildUI, columnWizard, downloadText, downloadDataUrl } from './ui.js';
@@ -16,6 +16,9 @@ export class CityApp {
     this.focusPath = [];
     this.brush = null;      // { field, values:Set, missing:bool } while hovering a legend row
     this.changes = new Map(); // edits made through actions: itemIndex -> field -> {from, to}
+    this.time = { cutoff: null }; // time scrubber: items whose mapping.time value is after cutoff do not exist yet
+    this.dataUrl = null;          // where the current document came from, if a URL
+    this.pendingView = parseView(location.hash); // a shared view to apply once data loads
     this.samples = [];
 
     this.renderer = new CityRenderer(els.viewport, {
@@ -23,6 +26,7 @@ export class CityApp {
       onClick: (hit, event) => this.onClick(hit, event),
       onDoubleClick: hit => this.onDoubleClick(hit),
       onLook: d => { this.look = d ? d.node.path : []; this.emit('where'); },
+      onCameraRest: () => this.writeHash(),
     });
     this.look = []; // path of the district under the camera's look-at point
     buildUI(this, els);
@@ -35,6 +39,10 @@ export class CityApp {
       else if (e.key === 'r') this.resetView();
       else if (e.key === 'f') this.flyToSelection();
       else if (e.key === 'p' && this.city) this.snapshot();
+      else if (e.key === 'j') this.step(1);
+      else if (e.key === 'k') this.step(-1);
+      else if (e.key === ' ' && this.city && this.mapping.time) { e.preventDefault(); this.emit('time-toggle'); }
+      else if (/^[1-9]$/.test(e.key) && this.selection.size) { const a = this.availableActions().filter(a => a.set)[+e.key - 1]; if (a) this.applyAction(a); }
     });
   }
 
@@ -53,12 +61,14 @@ export class CityApp {
     try {
       const r = await fetch(url);
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      this.dataUrl = url;
       await this.loadDocument(await r.json(), url.split('/').pop());
     } catch (e) { console.error(e); this.status(`Could not load ${url}: ${e.message}`); }
   }
 
   async loadFile(file) {
     this.status(`Reading ${file.name}…`);
+    this.dataUrl = null;
     try { await this.loadDocument(JSON.parse(await file.text()), file.name.replace(/\.json$/i, '')); }
     catch (e) { console.error(e); this.status(`Could not read ${file.name}: ${e.message}`); }
   }
@@ -82,11 +92,16 @@ export class CityApp {
     this.layout = layoutCity(this.city.tree);
     this.mapping = { ...this.city.defaults };
     this.filters.clear(); this.selection.clear(); this.focusPath = []; this.brush = null; this.changes.clear();
+    this.time = { cutoff: null };
     this.renderer.setLayout(this.layout);
     document.title = `${this.city.name} · Stadtus`;
     this.status('');
+    const view = this.pendingView; this.pendingView = null;
+    if (view && (!view.name || view.name === this.city.name)) this.applyView(view);
     this.refresh();
     this.emit('data');
+    if (view?.camera) this.renderer.setCamera(view.camera.p, view.camera.t);
+    this.writeHash();
   }
 
   // ---------- state changes ----------
@@ -94,12 +109,19 @@ export class CityApp {
   refresh() {
     if (!this.city) return;
     const { items, fields } = this.city;
+    const m = this.mapping;
     const active = [...this.filters.values()];
     if (this.focusPath.length) active.push({ type: 'path', prefix: this.focusPath });
     const { mask, count } = applyFilters(items, active, fields);
     this.visible = mask; this.visibleCount = count;
+    const tf = fields[m.time];
+    if (tf && this.time.cutoff != null && this.time.cutoff < tf.max) {
+      for (let i = 0; i < items.length; i++) {
+        const v = fieldValue(items[i], tf);
+        if (v !== undefined && v > this.time.cutoff) { if (mask[i]) this.visibleCount--; mask[i] = 2; }
+      }
+    }
 
-    const m = this.mapping;
     this.heightScale = makeHeightScale(fields[m.height], m.heightScale);
     this.colorScale = makeColorScale(fields[m.color]);
     this.spireScale = makeHeightScale(fields[m.spire], fields[m.spire]?.scale);
@@ -118,10 +140,16 @@ export class CityApp {
     }
     this.renderer.update({ heights, colors, spires, visible, emphasis });
     this.syncSelection();
-    if (!this.brush) this.emit('update');
+    if (!this.brush) { this.emit('update'); this.writeHash(); }
   }
 
-  setMapping(patch) { Object.assign(this.mapping, patch); this.refresh(); }
+  setMapping(patch) {
+    Object.assign(this.mapping, patch);
+    if ('time' in patch) { this.time = { cutoff: null }; this.emit('time'); }
+    this.refresh();
+  }
+  // Time scrubber: cutoff in the time field's units (ms for dates); null = everything.
+  setTimeCutoff(cutoff) { this.time = { cutoff }; this.refresh(); this.emit('time'); }
   setFilter(key, filter) { if (filter) this.filters.set(key, filter); else this.filters.delete(key); this.refresh(); }
   removeFilter(key) { this.setFilter(key, null); }
   clearFilters() { this.filters.clear(); this.refresh(); this.emit('filters'); }
@@ -157,6 +185,19 @@ export class CityApp {
     if (!hit) return;
     if (hit.type === 'building') this.renderer.focusBuilding(hit.index);
     else this.focusNode(this.layout.districts[hit.index].node.path);
+  }
+
+  // J/K: walk the visible items in height order (tallest first).
+  step(dir) {
+    if (!this.city) return;
+    const hf = this.city.fields[this.mapping.height];
+    const order = this.city.items.filter(it => this.visible[it._i] === 1)
+      .map(it => [it._i, hf ? (fieldValue(it, hf) ?? -Infinity) : 0])
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(x => x[0]);
+    if (!order.length) return;
+    const cur = this.selection.size === 1 ? order.indexOf([...this.selection][0]) : -1;
+    const next = cur < 0 ? (dir > 0 ? 0 : order.length - 1) : (cur + dir + order.length) % order.length;
+    this.focusItem(order[next]);
   }
 
   focusNode(path) {
@@ -213,6 +254,57 @@ export class CityApp {
     const items = [...this.selection].map(i => { const o = {}; for (const [k, v] of Object.entries(this.city.items[i])) if (k[0] !== '_') o[k] = v; return o; });
     downloadText(JSON.stringify({ name: `${this.city.name} (selection)`, items }, null, 1), 'selection.json');
   }
+}
+
+// ---------- shareable views (URL hash) ----------
+CityApp.prototype.serializeView = function () {
+  if (!this.city) return null;
+  const F = this.city.fields;
+  const filters = [];
+  for (const f of this.filters.values()) {
+    if (f.type === 'search') filters.push({ t: 's', q: f.text });
+    else if (f.type === 'range') filters.push({ t: 'r', f: f.field, a: f.min, b: f.max });
+    else if (f.type === 'set') {
+      const all = F[f.field].categories.map(c => c.value), inn = [...f.values];
+      const out = all.filter(v => !f.values.has(v));
+      filters.push(out.length < inn.length ? { t: 'c', f: f.field, out, m: f.excludeMissing ? 1 : 0 } : { t: 'c', f: f.field, in: inn, m: f.excludeMissing ? 1 : 0 });
+    }
+  }
+  const v = { name: this.city.name, map: this.mapping, filters, focus: this.focusPath, camera: this.renderer.getCamera() };
+  if (this.time.cutoff != null) v.time = this.time.cutoff;
+  if (this.selection.size && this.selection.size <= 50) v.sel = [...this.selection].map(i => this.city.items[i].id);
+  return v;
+};
+CityApp.prototype.applyView = function (v) {
+  const F = this.city.fields;
+  if (v.map) for (const [k, val] of Object.entries(v.map)) if (k === 'heightScale' || val === null || F[val] || (k === 'label' && val === 'name')) this.mapping[k] = val;
+  for (const f of v.filters || []) {
+    if (f.t === 's') this.filters.set('search', { type: 'search', text: f.q });
+    else if (f.t === 'r' && F[f.f]) this.filters.set('range:' + f.f, { type: 'range', field: f.f, min: f.a, max: f.b });
+    else if (f.t === 'c' && F[f.f]) {
+      const all = F[f.f].categories.map(c => c.value);
+      const values = new Set(f.in ? f.in : all.filter(x => !f.out.includes(x)));
+      this.filters.set('set:' + f.f, { type: 'set', field: f.f, values, excludeMissing: !!f.m });
+    }
+  }
+  if (Array.isArray(v.focus) && findNode(this.city.tree, v.focus)) this.focusPath = v.focus;
+  if (v.time != null) this.time = { cutoff: v.time };
+  if (Array.isArray(v.sel)) { const byId = new Map(this.city.items.map(it => [it.id, it._i])); for (const id of v.sel) if (byId.has(id)) this.selection.add(byId.get(id)); }
+};
+CityApp.prototype.writeHash = function () {
+  clearTimeout(this.hashTimer);
+  this.hashTimer = setTimeout(() => {
+    const v = this.serializeView();
+    if (!v) return;
+    const q = this.dataUrl ? `?data=${encodeURIComponent(this.dataUrl)}` : location.search;
+    history.replaceState(null, '', `${location.pathname}${q}#view=${encodeView(v)}`);
+  }, 300);
+};
+function encodeView(v) { return btoa(unescape(encodeURIComponent(JSON.stringify(v)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function parseView(hash) {
+  const m = /[#&]view=([^&]+)/.exec(hash || '');
+  if (!m) return null;
+  try { return JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch { return null; }
 }
 
 function under(it, prefix) { if (it.path.length < prefix.length) return false; for (let i = 0; i < prefix.length; i++) if (it.path[i] !== prefix[i]) return false; return true; }

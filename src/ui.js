@@ -1,7 +1,7 @@
 // Sidebar (inspector, legend-as-filter, range filters, encoding, data),
 // top bar (breadcrumb, filter chips, count), tooltip, empty state, and the
 // JSON-array import wizard.
-import { formatValue, fieldValue, summarize, histogram, findNode } from './model.js';
+import { formatValue, fieldValue, summarize, histogram, findNode, rankOf } from './model.js';
 
 const h = (tag, attrs = {}, ...children) => {
   const el = document.createElement(tag);
@@ -47,14 +47,17 @@ export function buildUI(app, els) {
   // ----- empty state + one-time hint, inside the viewport -----
   S.empty = h('div', { class: 'empty' });
   S.where = h('div', { class: 'where' });
-  viewport.append(S.empty, S.where);
+  S.scrub = h('div', { class: 'scrub' });
+  viewport.append(S.empty, S.where, S.scrub);
 
   renderData(); renderEmpty(); renderInspector();
 
-  app.on('data', () => { renderData(); renderEmpty(); renderEncoding(); renderLegend(); renderFilters(); renderInspector(); renderTop(); renderWhere(); showHintOnce(); topbar.querySelector('.dataset').textContent = app.city.name; });
+  app.on('data', () => { renderData(); renderEmpty(); renderEncoding(); renderLegend(); renderFilters(); renderInspector(); renderTop(); renderWhere(); renderScrub(); showHintOnce(); topbar.querySelector('.dataset').textContent = app.city.name; });
   app.on('update', () => { renderLegend(); renderTop(); renderWhere(); if (app.selection.size) renderInspector(); });
   app.on('selection', () => { renderInspector(); renderTop(); renderWhere(); });
   app.on('where', renderWhere);
+  app.on('time', () => { if (!playing) renderScrub(); });
+  app.on('time-toggle', () => S.scrubPlay?.click());
   app.on('hover', ({ hit, event }) => renderTooltip(hit, event));
   app.on('samples', () => { renderData(); renderEmpty(); });
   app.on('filters', renderFilters);
@@ -123,7 +126,38 @@ export function buildUI(app, els) {
       labeled('Color', fieldSelect('color', F, true)),
       labeled('Spire', fieldSelect('spire', numeric, true)),
       labeled('Label', fieldSelect('label', [{ key: 'name', label: 'name' }, ...F.filter(f => f.type !== 'number')], false)),
+      labeled('Time', fieldSelect('time', numeric, true)),
     );
+  }
+
+  // ----- Time scrubber: buildings exist once the time field passes the cutoff -----
+  let playing = null;
+  function renderScrub() {
+    const f = app.city?.fields[app.mapping?.time];
+    if (playing) { cancelAnimationFrame(playing); playing = null; }
+    if (!f || !(f.max > f.min)) { S.scrub.style.display = 'none'; S.scrub.replaceChildren(); return; }
+    S.scrub.style.display = 'flex';
+    const cutoff = app.time.cutoff ?? f.max;
+    const pos = v => Math.round(((v - f.min) / (f.max - f.min)) * 1000);
+    const val = t => f.min + (t / 1000) * (f.max - f.min);
+    const slider = h('input', { type: 'range', min: 0, max: 1000, value: pos(cutoff), oninput: e => app.setTimeCutoff(+e.target.value >= 1000 ? null : val(+e.target.value)) });
+    const label = h('span', { class: 'scrub-val' }, formatValue(cutoff, f));
+    const play = h('button', { class: 'btn ghost play', title: 'Play (space)' }, '▶');
+    play.onclick = () => {
+      if (playing) { cancelAnimationFrame(playing); playing = null; play.textContent = '▶'; return; }
+      let t = +slider.value >= 1000 ? 0 : +slider.value, last = performance.now();
+      play.textContent = '❚❚';
+      const tick = now => {
+        t += (now - last) / 12000 * 1000; last = now; // the whole range in 12 seconds
+        if (t >= 1000) { app.setTimeCutoff(null); return; }
+        slider.value = t; label.textContent = formatValue(val(t), f);
+        app.setTimeCutoff(val(t));
+        playing = requestAnimationFrame(tick);
+      };
+      playing = requestAnimationFrame(tick);
+    };
+    S.scrubPlay = play;
+    S.scrub.replaceChildren(play, h('span', { class: 'scrub-name' }, f.label), slider, label);
   }
 
   // ----- Legend (doubles as the category filter) -----
@@ -255,9 +289,9 @@ export function buildUI(app, els) {
     const edits = actionBar(sel);
     if (sel.length === 1) {
       const it = sel[0];
-      append(body, ...[h('div', { class: 'insp-title' }, app.labelOf(it)), h('div', { class: 'tt-path' }, it.path.join(' / ') || '(root)'),
-        app.visible[it._i] ? null : h('div', { class: 'hint warn' }, 'Hidden by the current filters.'),
-        detailTable(it), edits, actions].filter(Boolean));
+      append(body, h('div', { class: 'insp-title' }, app.labelOf(it)), h('div', { class: 'tt-path' }, it.path.join(' / ') || '(root)'),
+        app.visible[it._i] === 1 ? null : h('div', { class: 'hint warn' }, app.visible[it._i] === 2 ? 'Not yet, at this point in time.' : 'Hidden by the current filters.'),
+        whyLine(it), detailTable(it), edits, actions);
       return;
     }
     const hf = app.city.fields[app.mapping.height];
@@ -272,13 +306,30 @@ export function buildUI(app, els) {
     append(body, list);
   }
 
+  // Why does this building look the way it does: rank of its height and spire
+  // values within its district and overall.
+  function whyLine(it) {
+    const parts = [];
+    for (const key of [app.mapping.height, app.mapping.spire]) {
+      const f = app.city.fields[key]; if (!f) continue;
+      const local = rankOf(it, it._node.items, f), all = rankOf(it, app.city.items, f);
+      if (!local) continue;
+      const where = it._node.name || app.city.name;
+      parts.push(h('span', {}, h('b', {}, f.label), ` ${ordinal(local.rank)} of ${fmtN(local.n)} in ${where}, ${ordinal(all.rank)} of ${fmtN(all.n)} overall`));
+    }
+    return parts.length ? h('div', { class: 'why' }, parts) : null;
+  }
+  function ordinal(n) { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return fmtN(n) + (s[(v - 20) % 10] || s[v] || s[0]); }
+
   // Buttons for actions every selected item can take; a select for choice actions.
+  // Fixed actions are numbered: keys 1-9 fire them.
   function actionBar(sel) {
     const avail = app.availableActions();
     if (!avail.length && !sel.some(it => app.changes.has(it._i))) return null;
     const bar = h('div', { class: 'row actions' });
+    let n = 0;
     for (const a of avail) {
-      if (a.set) bar.append(h('button', { class: 'btn', onclick: () => app.applyAction(a) }, a.label));
+      if (a.set) bar.append(h('button', { class: 'btn', title: `Key ${n + 1}`, onclick: () => app.applyAction(a) }, ++n <= 9 ? h('kbd', {}, n) : null, a.label));
       else bar.append(h('select', { class: 'sel auto', onchange: e => { if (e.target.value !== '') app.applyAction(a, e.target.value === '\0' ? null : e.target.value); } },
         h('option', { value: '' }, a.label + '…'), a.choices.map(v => h('option', { value: v }, v)), h('option', { value: '\0' }, '(clear)')));
     }

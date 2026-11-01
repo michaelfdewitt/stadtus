@@ -116,9 +116,17 @@ def main():
         target = lambda: ev("(t => [t.x, t.y, t.z].map(v => +v.toFixed(2)))(stadtus.renderer.controls.target)")
         moved = lambda a, b: sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
 
-        def key(code, k, vk, hold=0.8):
+        def key(code, k, vk, hold=0.8, until_moved=False):
+            """Press a key. Movement keys are held until the camera actually moves
+            (software rendering can take a second per frame), then released."""
             ws.send("Input.dispatchKeyEvent", type="keyDown", code=code, key=k, windowsVirtualKeyCode=vk)
-            time.sleep(hold)
+            if until_moved:
+                start = cam(); t0 = time.time()
+                while time.time() - t0 < 6 and cam() == start:
+                    time.sleep(0.15)
+                time.sleep(0.25)
+            else:
+                time.sleep(hold)
             ws.send("Input.dispatchKeyEvent", type="keyUp", code=code, key=k, windowsVirtualKeyCode=vk)
             time.sleep(0.15)
 
@@ -126,11 +134,11 @@ def main():
 
         # WASD / QE
         for code, k, vk, axis in [("KeyW", "w", 87, "forward"), ("KeyD", "d", 68, "right"), ("KeyE", "e", 69, "up"), ("KeyQ", "q", 81, "down")]:
-            before = cam(); key(code, k, vk); after = cam()
+            before = cam(); key(code, k, vk, until_moved=True); after = cam()
             check(f"key {k} moves camera ({axis})", moved(before, after) > 1, f"{before} -> {after}")
         # E must raise, Q must lower
-        before = cam(); key("KeyE", "e", 69); check("E raises camera", cam()[1] > before[1])
-        before = cam(); key("KeyQ", "q", 81); check("Q lowers camera", cam()[1] < before[1])
+        before = cam(); key("KeyE", "e", 69, until_moved=True); check("E raises camera", cam()[1] > before[1])
+        before = cam(); key("KeyQ", "q", 81, until_moved=True); check("Q lowers camera", cam()[1] < before[1])
 
         # orbit drag
         cx, cy = W // 2 - 150, H // 2
@@ -178,6 +186,39 @@ def main():
         check("legend click filters", ev("stadtus.filters.size") == 1 and ev("stadtus.visibleCount < stadtus.city.items.length"), f"visible {ev('stadtus.visibleCount')}")
         key("Escape", "Escape", 27, hold=0.05); time.sleep(0.4)
         check("Esc clears filters and selection", ev("stadtus.filters.size === 0 && stadtus.selection.size === 0 && stadtus.visibleCount === stadtus.city.items.length"))
+
+        # J/K triage loop: J selects the tallest visible building, K steps back
+        key("KeyJ", "j", 74, hold=0.05); time.sleep(1.0)
+        first = ev("[...stadtus.selection][0]")
+        check("J selects the tallest visible", ev("stadtus.selection.size") == 1 and ev(f"stadtus.city.items[{first}].age_days") == ev("Math.max(...stadtus.city.items.map(i => i.age_days))"), str(first))
+        key("KeyJ", "j", 74, hold=0.05); time.sleep(0.3); key("KeyK", "k", 75, hold=0.05); time.sleep(0.6)
+        check("K steps back to the first", ev("[...stadtus.selection][0]") == first)
+        check("why line present", ev("!!document.querySelector('#sidebar .why')"))
+        # number key fires the first fixed action and records a change
+        before_status = ev(f"stadtus.city.items[{first}].status")
+        key("Digit1", "1", 49, hold=0.05); time.sleep(0.4)
+        check("key 1 applies an action", ev("stadtus.changes.size") == 1 and ev(f"stadtus.city.items[{first}].status") != before_status, f"{before_status} -> {ev(f'stadtus.city.items[{first}].status')}")
+        ev("stadtus.revert()"); time.sleep(0.2)
+
+        # time scrubber: a cutoff hides later buildings, the scrubber is visible
+        check("scrubber shown for the default time field", ev("getComputedStyle(document.querySelector('.scrub')).display") == "flex")
+        ev("stadtus.setTimeCutoff(stadtus.city.fields.opened.min + (stadtus.city.fields.opened.max - stadtus.city.fields.opened.min) / 2)"); time.sleep(0.4)
+        half = ev("stadtus.visibleCount")
+        check("time cutoff hides later buildings", 0 < half < ev("stadtus.city.items.length"), f"visible {half}")
+        ev("stadtus.setTimeCutoff(null)"); time.sleep(0.3)
+
+        # shareable view: set state, read the hash, reload with it, compare
+        ev("stadtus.setMapping({ color: 'assignee' }); stadtus.setFilter('range:age_days', { type: 'range', field: 'age_days', min: 100, max: 699 }); stadtus.focusNode(['backend'])"); time.sleep(1.5)
+        url = ev("location.href")
+        check("hash holds a view", "#view=" in url)
+        ws.send("Page.navigate", url=url)
+        for _ in range(100):
+            if ev("!!(window.stadtus && window.stadtus.city && window.stadtus.layout && stadtus.mapping)"):
+                break
+            time.sleep(0.3)
+        time.sleep(1.5)
+        check("view restored from URL", ev("stadtus.mapping.color") == "assignee" and ev("stadtus.filters.has('range:age_days')") and ev("stadtus.focusPath.join('/')") == "backend", f"color={ev('stadtus.mapping.color')} focus={ev('stadtus.focusPath')}")
+        key("Escape", "Escape", 27, hold=0.05); time.sleep(0.5)
 
         # double-click a district plate zooms in (focus path set)
         before = cam()
