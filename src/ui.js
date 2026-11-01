@@ -16,6 +16,8 @@ const h = (tag, attrs = {}, ...children) => {
   return el;
 };
 const fmtN = n => n.toLocaleString();
+// DOM append stringifies null; this one drops it, so conditionals can be inline.
+const append = (el, ...kids) => el.append(...kids.flat(Infinity).filter(Boolean));
 const ACCENT = '#3987e5', MUTED = '#4a4e5a';
 
 export function buildUI(app, els) {
@@ -66,7 +68,7 @@ export function buildUI(app, els) {
   function renderData() {
     const body = S.data.body; body.replaceChildren();
     S.status = h('div', { class: 'status' });
-    body.append(
+    append(body, 
       h('div', { class: 'row' },
         h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Open JSON…'),
         app.city ? h('a', { href: '#', class: 'quiet', onclick: e => { e.preventDefault(); app.snapshot(); } }, 'Save PNG') : null),
@@ -114,7 +116,7 @@ export function buildUI(app, els) {
     const fieldSelect = (key, options, allowNone) => h('select', { class: 'sel', onchange: e => app.setMapping({ [key]: e.target.value || null }) },
       allowNone ? h('option', { value: '', selected: !m[key] }, '(none)') : null,
       options.map(f => h('option', { value: f.key, selected: m[key] === f.key }, f.label)));
-    body.append(
+    append(body, 
       labeled('Height', h('div', { class: 'row nowrap' }, fieldSelect('height', numeric, true),
         h('select', { class: 'sel narrow', title: 'Height scale', onchange: e => app.setMapping({ heightScale: e.target.value }) },
           ['linear', 'sqrt', 'log'].map(s => h('option', { value: s, selected: m.heightScale === s }, s))))),
@@ -128,10 +130,10 @@ export function buildUI(app, els) {
   function renderLegend() {
     const body = S.legend.body; body.replaceChildren();
     if (!app.city) return;
-    body.append(legendBlock('Color', app.colorScale, app.mapping.color));
+    append(body, legendBlock('Color', app.colorScale, app.mapping.color));
     const hf = app.city.fields[app.mapping.height], sf = app.city.fields[app.mapping.spire];
-    if (hf) body.append(h('div', { class: 'legend-block' }, h('div', { class: 'legend-title' }, 'Height ', h('b', {}, hf.label), h('span', { class: 'quiet' }, ` ${formatValue(hf.min, hf)} to ${formatValue(hf.max, hf)}, ${app.mapping.heightScale}`))));
-    if (sf) body.append(h('div', { class: 'legend-block' }, h('div', { class: 'legend-title' }, 'Spire ', h('b', {}, sf.label), h('span', { class: 'quiet' }, ` ${formatValue(sf.min, sf)} to ${formatValue(sf.max, sf)}, ${sf.scale}`))));
+    if (hf) append(body, h('div', { class: 'legend-block' }, h('div', { class: 'legend-title' }, 'Height ', h('b', {}, hf.label), h('span', { class: 'quiet' }, ` ${formatValue(hf.min, hf)} to ${formatValue(hf.max, hf)}, ${app.mapping.heightScale}`))));
+    if (sf) append(body, h('div', { class: 'legend-block' }, h('div', { class: 'legend-title' }, 'Spire ', h('b', {}, sf.label), h('span', { class: 'quiet' }, ` ${formatValue(sf.min, sf)} to ${formatValue(sf.max, sf)}, ${sf.scale}`))));
   }
 
   function legendBlock(title, scale, fieldKey) {
@@ -197,8 +199,8 @@ export function buildUI(app, els) {
     const body = S.filters.body; body.replaceChildren();
     if (!app.city) return;
     const search = app.filters.get('search');
-    body.append(h('input', { class: 'inp', type: 'search', placeholder: 'Search names, paths, text', value: search?.text || '', oninput: e => app.setFilter('search', e.target.value ? { type: 'search', text: e.target.value } : null) }));
-    for (const f of Object.values(app.city.fields)) if (f.type === 'number' || f.type === 'date') body.append(rangeFilter(f));
+    append(body, h('input', { class: 'inp', type: 'search', placeholder: 'Search names, paths, text', value: search?.text || '', oninput: e => app.setFilter('search', e.target.value ? { type: 'search', text: e.target.value } : null) }));
+    for (const f of Object.values(app.city.fields)) if (f.type === 'number' || f.type === 'date') append(body, rangeFilter(f));
   }
 
   function rangeFilter(f) {
@@ -244,16 +246,16 @@ export function buildUI(app, els) {
   // ----- Inspector -----
   function renderInspector() {
     const body = S.inspector.body; body.replaceChildren();
-    if (!app.city) { body.append(h('div', { class: 'hint' }, 'Nothing loaded.')); return; }
+    if (!app.city) { append(body, h('div', { class: 'hint' }, 'Nothing loaded.')); return; }
     const sel = [...app.selection].map(i => app.city.items[i]);
-    if (!sel.length) { body.append(h('div', { class: 'hint' }, 'Click a building to inspect it.')); return; }
+    if (!sel.length) { append(body, h('div', { class: 'hint' }, 'Click a building to inspect it.')); return; }
     const link = (label, title, fn) => h('a', { href: '#', class: 'quiet', title, onclick: e => { e.preventDefault(); fn(); } }, label);
     const actions = h('div', { class: 'row quiet-actions' },
       link('Fly to', 'F', () => app.flyToSelection()), link('Export JSON', 'Download the selected items', () => app.exportSelection()), link('Clear', 'Esc', () => app.clearSelection()));
     const edits = actionBar(sel);
     if (sel.length === 1) {
       const it = sel[0];
-      body.append(...[h('div', { class: 'insp-title' }, app.labelOf(it)), h('div', { class: 'tt-path' }, it.path.join(' / ') || '(root)'),
+      append(body, ...[h('div', { class: 'insp-title' }, app.labelOf(it)), h('div', { class: 'tt-path' }, it.path.join(' / ') || '(root)'),
         app.visible[it._i] ? null : h('div', { class: 'hint warn' }, 'Hidden by the current filters.'),
         detailTable(it), edits, actions].filter(Boolean));
       return;
@@ -261,13 +263,13 @@ export function buildUI(app, els) {
     const hf = app.city.fields[app.mapping.height];
     const stats = summarize(sel, hf);
     const modified = sel.filter(it => app.changes.has(it._i)).length;
-    body.append(h('div', { class: 'insp-title' }, fmtN(sel.length), ' items', modified ? h('span', { class: 'quiet' }, ` · ${fmtN(modified)} modified`) : null),
+    append(body, h('div', { class: 'insp-title' }, fmtN(sel.length), ' items', modified ? h('span', { class: 'quiet' }, ` · ${fmtN(modified)} modified`) : null),
       stats && stats.n ? h('div', { class: 'stats' }, h('span', {}, hf.label, ' sum ', h('b', {}, formatValue(stats.sum, hf))), h('span', {}, 'mean ', h('b', {}, formatValue(stats.mean, hf))), h('span', {}, 'max ', h('b', {}, formatValue(stats.max, hf)))) : null,
       edits, actions);
     const list = h('div', { class: 'sel-list' });
     for (const it of sel.slice(0, 100)) list.append(h('div', { class: 'sel-item', onclick: () => app.focusItem(it._i), title: it.path.join(' / ') }, h('span', { class: 'swatch', style: `--c:${app.colorScale.colorOf(it)}` }), app.labelOf(it)));
     if (sel.length > 100) list.append(h('div', { class: 'hint' }, `and ${fmtN(sel.length - 100)} more`));
-    body.append(list);
+    append(body, list);
   }
 
   // Buttons for actions every selected item can take; a select for choice actions.
@@ -416,7 +418,7 @@ export function columnWizard(columns, sample, host) {
 }
 
 export function downloadDataUrl(url, filename) {
-  const a = document.createElement('a'); a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove();
+  const a = document.createElement('a'); a.href = url; a.download = filename; document.append(body, a); a.click(); a.remove();
 }
 export function downloadText(text, filename, type = 'application/json') {
   const url = URL.createObjectURL(new Blob([text], { type }));
